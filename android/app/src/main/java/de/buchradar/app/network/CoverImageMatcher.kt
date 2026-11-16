@@ -1,33 +1,41 @@
 package de.buchradar.app.network
 
+import de.buchradar.app.domain.catchingOperation
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Rect
+import android.os.SystemClock
 import androidx.core.graphics.drawable.toBitmap
-import coil.ImageLoader
+import coil.imageLoader
 import coil.request.ImageRequest
 import coil.request.SuccessResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** Ranks a short catalog result list against the current camera frame; it stores neither image. */
 object CoverImageMatcher {
     suspend fun rank(context: Context, cameraFrame: Bitmap, books: List<CatalogBook>, visualOnly: Boolean = false): List<CatalogBook> =
         withContext(Dispatchers.IO) {
-            val loader = ImageLoader(context)
+            val appContext = context.applicationContext
+            val loader = appContext.imageLoader
             val queryFeatures = features(cameraFrame)
+            val rankedIds = books.take(12).map { it.candidateId }.toSet()
+            val deadline = SystemClock.elapsedRealtime() + 8_000
             books.map { book ->
+                val remaining = deadline - SystemClock.elapsedRealtime()
+                if (book.candidateId !in rankedIds || remaining <= 0) return@map book.copy(visualSimilarity = null)
                 val url = book.coverUrl ?: book.isbn?.let { "https://covers.openlibrary.org/b/isbn/$it-M.jpg?default=false" }
                 val score = url?.let {
-                    runCatching {
-                        val request = ImageRequest.Builder(context)
+                    catchingOperation {
+                        val request = ImageRequest.Builder(appContext)
                             .data(it)
                             .allowHardware(false)
                             .size(320)
                             .build()
-                        val result = loader.execute(request)
+                        val result = withTimeoutOrNull(minOf(4_000, remaining)) { loader.execute(request) }
                         if (result is SuccessResult) similarity(queryFeatures, features(result.drawable.toBitmap())) else null
                     }.getOrNull()
                 }
@@ -37,7 +45,8 @@ object CoverImageMatcher {
                 val textScore = book.textSimilarity
                 if (visualOnly) return@sortedByDescending (imageScore ?: -1).toDouble()
                 when {
-                    imageScore != null && textScore != null -> textScore * 0.62 + imageScore * 0.38
+                    // A crude image hash is supporting evidence, never a veto on a text match.
+                    imageScore != null && textScore != null -> textScore + ((imageScore - 75).coerceAtLeast(0) * 0.2)
                     textScore != null -> textScore.toDouble()
                     imageScore != null -> imageScore.toDouble()
                     else -> 0.0
@@ -66,6 +75,9 @@ object CoverImageMatcher {
             histogram[8 + Color.green(color) * 8 / 256]++
             histogram[16 + Color.blue(color) * 8 / 256]++
         }
+        small.recycle()
+        sample.recycle()
+        cover.recycle()
         return Features(hash, histogram)
     }
 
@@ -77,7 +89,7 @@ object CoverImageMatcher {
         for (i in first.histogram.indices) {
             histogramIntersection += minOf(first.histogram[i] / firstTotal, second.histogram[i] / secondTotal)
         }
-        val score = 0.75f * (hashMatches / 64f) + 0.25f * (histogramIntersection / 3f)
+        val score = 0.75f * (hashMatches / 64f) + 0.25f * histogramIntersection
         return (score * 100).toInt()
     }
 

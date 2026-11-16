@@ -11,8 +11,9 @@ object AppLog {
     private const val KEY = "entries"
     private const val TAG = "BuchRadar.App"
 
+    @Synchronized
     fun add(context: Context, message: String, error: Throwable? = null) {
-        val line = "${SimpleDateFormat("HH:mm:ss", Locale.GERMANY).format(Date())}  $message"
+        val line = "${SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.GERMANY).format(Date())}  ${message.take(500)}"
         val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val entries = (prefs.getString(KEY, "").orEmpty().lines().filter(String::isNotBlank) + line).takeLast(300)
         prefs.edit().putString(KEY, entries.joinToString("\n")).apply()
@@ -23,6 +24,7 @@ object AppLog {
         .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         .getString(KEY, "").orEmpty().lines().filter(String::isNotBlank).asReversed()
 
+    @Synchronized
     fun clear(context: Context) {
         context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove(KEY).apply()
     }

@@ -9,6 +9,9 @@ import retrofit2.converter.moshi.MoshiConverterFactory
 import retrofit2.http.GET
 import retrofit2.http.Headers
 import retrofit2.http.Query
+import retrofit2.http.Header
+import de.buchradar.app.BuildConfig
+import de.buchradar.app.domain.BookIdentity
 import retrofit2.HttpException
 import java.io.IOException
 import java.net.ConnectException
@@ -33,10 +36,9 @@ private interface MomoxApi {
     @Headers(
         "Accept: application/json",
         "User-Agent: momox/11.0 (Android)",
-        "X-API-TOKEN: 2231443b8fb511c7b6a0eb25a62577320bac69b6",
         "X-MARKETPLACE-ID: momox_de"
     )
-    suspend fun offer(@Query("ean") isbn: String): MomoxOfferResponse
+    suspend fun offer(@Query("ean") isbn: String, @Header("X-API-TOKEN") token: String): MomoxOfferResponse
 }
 
 object MomoxCatalog {
@@ -51,15 +53,16 @@ object MomoxCatalog {
     }
 
     suspend fun check(isbn: String): MomoxCheck {
+        if (BuildConfig.MOMOX_API_TOKEN.isBlank()) throw MomoxCheckException("Momox-Zugang ist für diesen Build nicht eingerichtet.", null, retryable = false, pauseQueue = true)
         val startedAt = SystemClock.elapsedRealtime()
         val response = try {
-            api.offer(isbn.filter(Char::isDigit))
+            api.offer(BookIdentity.canonicalIsbn(isbn) ?: throw IllegalArgumentException("Ungültige ISBN"), BuildConfig.MOMOX_API_TOKEN)
         } catch (error: CancellationException) {
             throw error
         } catch (error: HttpException) {
             val code = error.code()
             Log.w(TAG, "HTTP $code after ${SystemClock.elapsedRealtime() - startedAt} ms")
-            throw MomoxCheckException(httpFailureMessage(code), error)
+            throw MomoxCheckException(httpFailureMessage(code), error, retryable = code == 429 || code >= 500, pauseQueue = code in listOf(401, 403, 404), retryAfterSeconds = error.response()?.headers()?.get("Retry-After")?.toLongOrNull())
         } catch (error: IOException) {
             val category = when (error) {
                 is UnknownHostException -> "DNS: Momox-Server nicht erreichbar"
@@ -72,26 +75,35 @@ object MomoxCatalog {
             throw MomoxCheckException(category, error)
         } catch (error: Exception) {
             Log.e(TAG, "Unexpected response failure: ${error.javaClass.simpleName}")
-            throw MomoxCheckException("Antwort konnte nicht verarbeitet werden (${error.javaClass.simpleName})", error)
+            throw MomoxCheckException("Antwort konnte nicht verarbeitet werden (${error.javaClass.simpleName})", error, retryable = false, pauseQueue = true)
         }
         val elapsed = SystemClock.elapsedRealtime() - startedAt
         Log.i(TAG, "Response status=${response.status ?: "missing"}, elapsed=${elapsed} ms")
+        return validateOffer(isbn, response)
+    }
+
+    internal fun validateOffer(isbn: String, response: MomoxOfferResponse): MomoxCheck {
+        val wanted = BookIdentity.canonicalIsbn(isbn)
+            ?: throw MomoxCheckException("Ungültige ISBN", retryable = false)
+        val returned = response.product?.ean
+        if (returned != null && BookIdentity.canonicalIsbn(returned) != wanted)
+            throw MomoxCheckException("Momox-Antwort gehört zu einer anderen Ausgabe.", retryable = false)
         return when (response.status?.lowercase()) {
             "offer" -> {
-                val price = response.price?.toBigDecimalOrNull()
-                    ?: return MomoxCheck("ERROR", null, response.product?.title)
-                MomoxCheck(
-                    status = "AVAILABLE",
-                    priceCents = price.multiply(BigDecimal(100)).setScale(0, RoundingMode.HALF_UP).toInt(),
-                    title = response.product?.title
-                )
+                if (!response.currency.equals("EUR", ignoreCase = true) || returned == null)
+                    throw MomoxCheckException("Momox-Antwort enthält keine bestätigte ISBN oder EUR-Währung.", retryable = false)
+                if (!response.product.type.equals("book", ignoreCase = true))
+                    throw MomoxCheckException("Momox bestätigt dieses Angebot nicht als Buch.", retryable = false)
+                val amount = response.price?.toBigDecimalOrNull()
+                    ?: throw MomoxCheckException("Ungültiger Ankaufspreis", retryable = false)
+                val cents = try { amount.movePointRight(2).intValueExact() }
+                    catch (_: ArithmeticException) { throw MomoxCheckException("Ungültiger Ankaufspreis", retryable = false) }
+                if (cents <= 0) throw MomoxCheckException("Ungültiger Ankaufspreis", retryable = false)
+                MomoxCheck("AVAILABLE", cents, response.product.title)
             }
             "no_offer" -> MomoxCheck("NOT_AVAILABLE", null, response.product?.title)
             "unknown" -> MomoxCheck("UNKNOWN", null, response.product?.title)
-            else -> {
-                Log.w(TAG, "Unrecognized Momox status value")
-                MomoxCheck("UNKNOWN", null, response.product?.title)
-            }
+            else -> throw MomoxCheckException("Unbekanntes Momox-Antwortformat", retryable = false, pauseQueue = true)
         }
     }
 
@@ -103,4 +115,4 @@ object MomoxCatalog {
     }
 }
 
-class MomoxCheckException(message: String, cause: Throwable) : Exception(message, cause)
+class MomoxCheckException(message: String, cause: Throwable? = null, val retryable: Boolean = true, val pauseQueue: Boolean = false, val retryAfterSeconds: Long? = null) : Exception(message, cause)

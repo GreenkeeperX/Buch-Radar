@@ -5,7 +5,7 @@ import androidx.room.PrimaryKey
 
 @Entity(tableName = "books")
 data class BookEntity(
-    @PrimaryKey val isbn: String,
+    val isbn: String,
     val title: String? = null,
     val author: String? = null,
     val publicationYear: Int? = null,
@@ -14,5 +14,10 @@ data class BookEntity(
     val currentPriceCents: Int? = null,
     val lastCheckedAt: Long? = null,
     val createdAt: Long = System.currentTimeMillis(),
-    val soldAt: Long? = null
+    val soldAt: Long? = null,
+    val lastAttemptAt: Long? = null,
+    val lastAttemptStatus: String? = null,
+    val lastError: String? = null,
+    val metadataSource: String? = null,
+    @PrimaryKey val id: String = java.util.UUID.randomUUID().toString()
 )

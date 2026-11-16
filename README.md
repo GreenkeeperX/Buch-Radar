@@ -1,80 +1,111 @@
-# Bücher-Radar – Android-App
+# Bücher-Radar
 
-Android-Prototyp zur Erfassung von Büchern per ISBN/EAN und zur späteren Synchronisierung mit einem separaten Prüf-Backend.
+Android-App zur lokalen Verwaltung gebrauchter Bücher und zur wiederkehrenden
+Prüfung von Ankaufspreisen. Kotlin, Jetpack Compose, Room, CameraX und WorkManager.
 
-## Status und Grenzen
+## Downloads und Weiterentwicklung
 
-- Dies ist ein früher Android-Prototyp. Das Debug-APK lässt sich lokal bauen; ein Release-Build mit eigener Signierung ist noch nicht eingerichtet.
-- Die App kann die gespeicherte Liste nacheinander gegen den derzeit bekannten Momox-App-Endpunkt prüfen. Diese Schnittstelle ist undokumentiert, nicht als öffentliche API zugesichert und kann sich ändern oder Anfragen begrenzen.
-- Für echte tägliche Prüfungen wird ein separat betriebener HTTPS-Backend-Dienst benötigt. Die Android-App selbst muss dafür nicht dauerhaft laufen.
-- Bücher werden lokal mit Room gespeichert und können bearbeitet oder entfernt werden.
-- Beim Hinzufügen sucht die App Titel, Autor und Erscheinungsjahr über Open Library, Google Books und ergänzend die Deutsche Nationalbibliothek. Die Daten werden lokal gespeichert; die Suche braucht eine Internetverbindung und auch die kombinierten Kataloge sind nicht vollständig.
-- Gültige ISBN-10/ISBN-13 werden geprüft und mit korrekten Bindestrichen angezeigt.
-- Ein gemeinsamer Vollbild-Kamerascanner priorisiert EAN-Barcodes, stabilisiert erkannten Text über mehrere Bilder und kann anschließend automatisch eine Suche starten. Einzelbuch- und Regalmodus lassen sich manuell wählen; eine automatische Szeneneinschätzung und ein experimenteller Cover-Test sind vorhanden.
-- Der Live-OCR-Text wird über mehrere Frames stabilisiert, bevor er angezeigt oder übernommen wird. Das ISBN-Metadaten-Lookup nutzt neben der Suche einen exakten ISBN-Fallback.
-- Der Kamera-Barcode-Scanner liest EAN-13 und füllt die ISBN in das Eingabefeld. Die Buchdaten werden danach wie bei manueller Eingabe gesucht.
-- Die Cover-Erkennung arbeitet mit dem Live-Kamerabild. ML Kit liest Titel und ISBN lokal aus; ein geeigneter Frame wird nur im Arbeitsspeicher gehalten. Erkannte Titel/ISBN suchen passende Ausgaben in Open Library. Eine lokale Bildähnlichkeits-Heuristik sortiert deren Coverbilder; das Foto wird nicht hochgeladen oder gespeichert. Der Prozentwert ist eine Sortierhilfe, keine verlässliche Identitätswahrscheinlichkeit.
-- Momox lässt sich pro Buch oder für die ganze Liste nacheinander abfragen. Der Listenlauf zeigt den Fortschritt, wartet 750 ms zwischen ISBNs und speichert Preis/Status samt Prüfzeit lokal. Für stabile, regelmäßige Produktivprüfungen wäre eine von Momox freigegebene Schnittstelle nötig.
-- Backend-Synchronisierung ist noch nicht integriert. WorkManager und Retrofit bleiben dafür Grundgerüste.
+Aktuelle Testversionen stehen unter [GitHub Releases](https://github.com/GreenkeeperX/Buch-Radar/releases).
+Jede veröffentlichte Version erhält eine APK und ein Quellcode-ZIP für die
+Weiterarbeit, auch mit Claude. Einstieg: [CLAUDE.md](CLAUDE.md),
+[Übergabe](docs/handoff.md) und [Veröffentlichungsablauf](docs/release-process.md).
 
-## Enthalten
+Die öffentliche Test-APK enthält **keinen vorkonfigurierten Momox-Zugang**.
+Bücherverwaltung, Suche und Scanner sind nutzbar; Momox-Prüfungen benötigen
+einen separat berechtigten Zugang beim Build. Die APK ist derzeit debug-signiert,
+keine produktiv signierte Store-Version. Vor einem Installationswechsel die Liste
+exportieren; unterschiedliche Signaturen erlauben kein direktes Update.
 
-- Kotlin + Jetpack Compose Grundgerüst
-- Kamera-Barcode-Scanner für EAN-13 mit CameraX und ML Kit
-- Cover-/Titel-OCR mit ML Kit Text Recognition und Cover-Vorschau bei Katalogtreffern
-- Room-Datenbank mit lokaler Buchliste
-- ISBN-Prüfung und standardgerechte Bindestrichformatierung
-- Katalogsuche nach ISBN und Titel über Open Library und Google Books mit DNB-Fallback
-- Zusammenführung gleicher Ausgaben anhand ihrer ISBN bei getrennter Behandlung unterschiedlicher Ausgaben
-- OCR-Titelsuche probiert einzelne erkannte Textzeilen und normalisiert Umlaute/Akzente; Titel- und Autorüberlappung werden zur Sortierung mit Coverähnlichkeit kombiniert.
-- Live-OCR plus lokale, heuristische Cover-Bildsortierung für wenige Katalogtreffer
-- Momox-Preisabfrage pro Buch oder fortlaufend für die gesamte Liste
-- Die Darstellung folgt der Geräteeinstellung oder kann in den Einstellungen fest auf Hell oder Dunkel gesetzt werden.
-- Das Einstellungsrad zeigt ein lokales Diagnoseprotokoll und erlaubt dessen Löschung.
-- Eine optionale tägliche oder wöchentliche Hintergrundprüfung kann bei Netzwerkverbindung laufen. Ergebnisbenachrichtigungen sind optional und können auf einen Momox-Gesamtankaufswert ab 10 € begrenzt werden.
-- WorkManager-Sync-Job als Grundgerüst
-- Retrofit-Endpunktdefinition als Backend-Grundgerüst
-- Backend-Entwurf mit FastAPI und austauschbarem Momox-Provider
-- Gradle-Wrapper für einen reproduzierbaren Android-Build
+## Funktionen
 
-## Voraussetzungen
+- ISBN-/Titelsuche über Open Library, Google Books und DNB; konkrete Open-Library-
+  Ausgaben statt Kombination beliebiger ISBNs mit Werkdaten.
+- Barcode und lokale OCR mit Einzelbuch-, Regal- und experimentellem Covermodus.
+- Regal-Funde lokal fortsetzen, korrigieren und für später zurückstellen;
+  erkannte Texte und Treffer bleiben auch nach einem App-Neustart erhalten.
+- Lokale Liste, Bearbeitung, Auswahl, verkauftes Archiv und Bücher ohne ISBN.
+- Gemeinsame persistente Momox-Warteschlange für manuelle und automatische Prüfungen.
+- Letzter Versuch und letztes erfolgreiches Angebot getrennt; lokaler Prüfverlauf.
+- Tägliche/wöchentliche Prüfung bei Netzverbindung; Android bestimmt den genauen
+  Ausführungszeitpunkt. Fortschritt bleibt bei Unterbrechungen erhalten.
+- Benachrichtigungen für Änderungen, optionale Schwellen 10/15 Euro.
+- Hell/Dunkel/Geräteeinstellung, separate Diagnoseansicht, JSON-Export und Import.
 
-- Android Studio (optional für grafische Entwicklung)
-- JDK 17
-- Android SDK 35
-- Android-Gerät mit Kamera oder Emulator
+## Grenzen
 
-## Öffnen und bauen
+Dies ist weiterhin ein Prototyp. OCR, Szenenerkennung und Regalgruppierung sind
+heuristisch und müssen an echten Büchern überprüft werden. Der Cover-Test sucht
+Kandidaten über Text und vergleicht ihre Cover lokal; er ist keine globale visuelle
+Bildsuche. Ausgabe und ISBN vor einer Übernahme vergleichen.
 
-1. ZIP entpacken.
-2. Android Studio → **Open** → Ordner `android/` auswählen.
-3. Gradle-Synchronisierung abwarten.
-4. App auf Gerät/Emulator starten.
+Die bisherige Momox-Anbindung verwendet einen nicht als öffentliche Schnittstelle
+zugesicherten App-Endpunkt. Ein stabiler autorisierter Zugang ist noch zu klären.
+Momox erwähnt eine API für Großbestände in seiner [FAQ](https://www.momox.de/fragen-und-antworten/).
+Die App schließt keine Verkäufe ab. Preise und Annahme können sich ändern.
 
-Alternativ lässt sich das Debug-APK im Terminal bauen (JDK 17 und Android SDK 35):
+Die Bücherseite nennt 15 Euro für Abholung, die allgemeine FAQ formuliert die
+10-Euro-Schwelle anders. Maßgeblich sind die Bedingungen beim Verkaufsabschluss.
+Die Benachrichtigungsschwelle ist eine persönliche Einstellung.
 
-```bash
-cd android
-./gradlew assembleDebug
+## Einrichtung und Build
+
+Voraussetzungen: JDK 17, Android SDK 35, Android ab API 26. Android Studio ist optional.
+Im Ordner `android`:
+
+```sh
+./gradlew testDebugUnitTest assembleDebug
 ```
 
-Das APK liegt anschließend unter `android/app/build/outputs/apk/debug/app-debug.apk`.
-Die SDK-Pfaddatei `android/local.properties` ist maschinenspezifisch und soll nicht eingecheckt werden.
+SDK-Pfad lokal in `android/local.properties` als `sdk.dir` konfigurieren.
+Ein berechtigter Momox-Zugang kann über die Umgebungsvariable `MOMOX_API_TOKEN`
+oder `momox.apiToken` in dieser ignorierten Datei bereitgestellt werden.
+Ohne Zugang lässt sich die App bauen und die Bücherverwaltung nutzen; die
+Momox-Prüfung pausiert mit einem Hinweis. Zugangswerte niemals einchecken.
+Build-Konfiguration macht einen Wert nicht geheim gegenüber APK-Analyse.
 
-Das Backend-Verzeichnis ist ein separater Python-Dienst und wird nicht automatisch durch die Android-App gestartet.
+APK: `android/app/build/outputs/apk/debug/app-debug.apk`.
+Eine dauerhafte Produktionssignierung ist noch offen; öffentliche Downloads sind
+ausdrücklich Testversionen. Zugangswerte dürfen nicht in öffentliche APKs gelangen.
 
-## Backend lokal starten
+## Tests
 
-```bash
-cd backend
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+```sh
+./gradlew testDebugUnitTest lintDebug
+./gradlew connectedDebugAndroidTest
 ```
 
-Für einen echten externen Betrieb muss der Dienst auf einem geeigneten Server mit HTTPS, Authentifizierung, Backups und abgesicherter Datenbank betrieben werden. Keine Ports am privaten Homeserver öffnen, nur um die App erreichbar zu machen.
+Die Gerätetests verwenden separate Testdatenbanken. Keine private Bücherliste
+oder private Kameraaufnahme in das öffentliche Repository übernehmen.
 
-## Momox-Integration
+Backend-Vertragstests nach Installation von `backend/requirements.txt`:
+`cd backend` und `python -m unittest discover -s tests -v`.
 
-`backend/app/providers/base.py` definiert das Provider-Protokoll. `demo.py` liefert absichtlich nur einen neutralen Demo-Status. Erst nach technischer Prüfung einer zulässigen und stabilen Momox-Schnittstelle darf ein echter Provider ergänzt werden. Fehler, unbekannter Status und „wird nicht angekauft“ müssen getrennte Zustände bleiben.
+## Daten und Sicherung
+
+Bilder der Kamera werden nicht hochgeladen. Katalogdienste erhalten Suchtext/ISBN,
+Momox erhält die zu prüfende ISBN. Eine Internetverbindung ist dafür erforderlich.
+Die Bücherliste bleibt lokal. Export/Import ist über die Einstellungen verfügbar;
+vorhandene ISBNs werden beim Import nicht überschrieben. Preise werden neu geprüft.
+Offene Regal-Funde werden separat lokal gesichert, ohne Kameraaufnahmen. Sie sind
+nicht Teil des Bücherlisten-Exports oder der Android-Systemsicherung.
+Android-Systembackup schließt Bücherdatenbank und Diagnose aus; für einen
+Gerätewechsel ausdrücklich exportieren und importieren.
+
+## Backend-Entwurf
+
+`backend/` enthält einen unangebundenen FastAPI-Demoentwurf. Er liefert `UNKNOWN`,
+keine realen Momox-Angebote. Die Android-App benötigt ihn nicht für Hintergrundarbeit.
+Zeitstempel des Vertrags sind Unix-Millisekunden. Vor öffentlichem Betrieb fehlen
+unter anderem Authentifizierung, serverseitige Begrenzungen und ein autorisierter
+Anbieterzugang. Details siehe `backend/README.md`.
+
+## Entwicklungsstand
+
+Die Grenzen und verbleibenden Prüfungen stehen in `docs/implementation-status.md`.
+
+## Lizenz
+
+Bücher-Radar steht unter der GNU General Public License, Version 3
+(`GPL-3.0-only`). Der vollständige Lizenztext steht in [LICENSE](LICENSE).
+Bei Weitergabe veränderter Versionen muss der zugehörige Quellcode unter dieser
+Lizenz zugänglich sein. Private Änderungen müssen nicht veröffentlicht werden.

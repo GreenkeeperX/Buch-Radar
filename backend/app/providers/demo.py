@@ -7,6 +7,6 @@ class DemoMomoxProvider:
         return BookCheckResult(
             isbn=isbn,
             status="UNKNOWN",
-            checked_at=int(datetime.now(timezone.utc).timestamp()),
+            checked_at=int(datetime.now(timezone.utc).timestamp() * 1000),
             message="Demo-Modus: Momox-Schnittstelle noch nicht angebunden."
         )
