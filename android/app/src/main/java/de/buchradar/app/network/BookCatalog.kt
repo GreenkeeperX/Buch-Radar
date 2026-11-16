@@ -41,6 +41,7 @@ data class OpenLibraryBookData(
 )
 data class OpenLibraryAuthorData(val name: String? = null)
 data class OpenLibraryCoverData(val small: String? = null, val medium: String? = null, val large: String? = null)
+data class CatalogFieldValue(val value: String, val sources: Set<String> = emptySet())
 
 data class CatalogBook(
     val title: String,
@@ -54,8 +55,10 @@ data class CatalogBook(
     val sources: Set<String> = emptySet(),
     val publisher: String? = null,
     val sourceId: String? = null,
-    val fieldSources: Map<String, String> = emptyMap()
+    val fieldSources: Map<String, String> = emptyMap(),
+    val fieldValues: Map<String, List<CatalogFieldValue>> = emptyMap()
 ) {
+    val conflictingFields: Set<String> get() = fieldValues.filterValues { it.size > 1 }.keys
     val candidateId: String get() = isbn?.let { "isbn:$it" } ?: sourceId
         ?: "text:$title|$author|$publicationYear|$publisher"
 }
@@ -167,7 +170,7 @@ object BookCatalog {
         val google = CatalogAccess.fetch("Google Books", "title:${title.take(250)}") { googleApi.search(title.take(250).trim(), 10) }?.items.orEmpty().mapNotNull { volume ->
             val info = volume.volumeInfo ?: return@mapNotNull null
             val cleanTitle = info.title?.trim()?.takeIf(String::isNotEmpty) ?: return@mapNotNull null
-            val validIsbn = info.identifiers.orEmpty().firstNotNullOfOrNull { id -> id.identifier?.let { raw -> catchingOperation { ISBN.valueOf(raw) }.getOrNull()?.toCompactString() } }
+            val validIsbn = info.identifiers.orEmpty().firstNotNullOfOrNull { BookIdentity.canonicalIsbn(it.identifier) }
             CatalogBook(cleanTitle, info.authors.orEmpty().joinToString(", ").takeIf(String::isNotBlank), info.publishedDate?.take(4)?.toIntOrNull(), validIsbn,
                 (info.imageLinks?.thumbnail ?: info.imageLinks?.smallThumbnail)?.replace("http://", "https://"), sources = setOf("Google Books"))
         }
@@ -201,6 +204,9 @@ object BookCatalog {
     private fun yearFrom(value: String?): Int? = Regex("\\b(1[5-9]\\d{2}|20\\d{2}|21\\d{2})\\b").find(value.orEmpty())?.value?.toIntOrNull()
 
     private fun parseDnbRecords(xml: String): List<CatalogBook> {
+        require(!xml.contains("<!DOCTYPE", ignoreCase = true) && !xml.contains("<!ENTITY", ignoreCase = true)) {
+            "Katalogantwort enthält eine nicht unterstützte Dokumentdeklaration"
+        }
         val parser = Xml.newPullParser().apply {
             setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, false)
             setInput(StringReader(xml))
@@ -247,38 +253,51 @@ object BookCatalog {
         return results
     }
 
-    /** Same ISBNs represent one edition; records without ISBN merge only when title and author agree. */
+    /** Edition identity controls merging; keep conflicting field evidence for human review. */
     internal fun mergeCandidates(candidates: List<CatalogBook>): List<CatalogBook> = candidates
         .filter { it.title.isNotBlank() }
         .groupBy { candidate ->
-            candidate.isbn?.let { "isbn:${it.normalizedIsbn()}" }
+            BookIdentity.canonicalIsbn(candidate.isbn)?.let { "isbn:$it" }
                 ?: candidate.candidateId
         }
         .values.map { records ->
             val preferred = records.first()
+            fun evidence(field: String, value: (CatalogBook) -> String?): List<CatalogFieldValue> =
+                records.flatMap { record ->
+                    record.fieldValues[field] ?: listOfNotNull(value(record)?.takeIf(String::isNotBlank)?.let {
+                        CatalogFieldValue(it, record.fieldSources[field]?.split(", ")?.toSet() ?: record.sources)
+                    })
+                }.groupBy { foldText(it.value) }.values.map { values ->
+                    CatalogFieldValue(values.first().value, values.flatMap { it.sources }.toSet())
+                }
+            val values = mapOf(
+                "title" to evidence("title") { it.title },
+                "author" to evidence("author") { it.author },
+                "year" to evidence("year") { it.publicationYear?.toString() },
+                "publisher" to evidence("publisher") { it.publisher }
+            ).filterValues { it.isNotEmpty() }
             preferred.copy(
                 title = records.firstOrNull { it.title.isNotBlank() }?.title ?: preferred.title,
                 author = records.firstNotNullOfOrNull { it.author?.takeIf(String::isNotBlank) },
                 publicationYear = records.firstNotNullOfOrNull { it.publicationYear },
-                isbn = preferred.isbn ?: records.firstNotNullOfOrNull { it.isbn },
+                isbn = BookIdentity.canonicalIsbn(preferred.isbn) ?: records.firstNotNullOfOrNull { BookIdentity.canonicalIsbn(it.isbn) },
                 coverUrl = records.firstNotNullOfOrNull { it.coverUrl?.takeIf(String::isNotBlank) },
                 visualSimilarity = records.firstNotNullOfOrNull { it.visualSimilarity },
                 textSimilarity = records.mapNotNull { it.textSimilarity }.maxOrNull(),
                 shelfQuery = preferred.shelfQuery ?: records.firstNotNullOfOrNull { it.shelfQuery },
                 sources = records.flatMap { it.sources }.toSet(),
                 publisher = records.firstNotNullOfOrNull { it.publisher },
-                fieldSources = mapOfNotNull(
-                    "title" to records.firstOrNull { it.title.isNotBlank() }?.sources?.joinToString(),
-                    "author" to records.firstOrNull { !it.author.isNullOrBlank() }?.sources?.joinToString(),
-                    "year" to records.firstOrNull { it.publicationYear != null }?.sources?.joinToString(),
-                    "cover" to records.firstOrNull { it.coverUrl != null }?.sources?.joinToString()
-                )
+                fieldSources = values.mapValues { it.value.first().sources.joinToString() } + mapOfNotNull(
+                    "cover" to records.firstOrNull { it.coverUrl != null }?.let { it.fieldSources["cover"] ?: it.sources.joinToString() }
+                ),
+                fieldValues = values
             )
         }
 
     /** Search OCR as several short title/author fragments, then rank title and author overlap. */
     suspend fun findByRecognizedText(text: String, maxQueries: Int = 4): List<CatalogBook> = CatalogAccess.search {
-        val lines = text.lines().map { it.trim() }
+        val boundedText = text.take(2_000)
+        val lines = boundedText.lines().map { it.trim() }
             .filter { it.length >= 3 && it.any(Char::isLetter) }
         val phraseWindows = lines.flatMap { line ->
             val words = line.split(Regex("\\s+")).filter { it.length >= 2 }
@@ -292,11 +311,11 @@ object BookCatalog {
             .map(::foldText)
             .filter { it.length >= 3 }
             .distinct()
-            .take(maxQueries.coerceAtLeast(1))
+            .take(maxQueries.coerceIn(1, 4))
         val candidates = mergeCandidates(queries.flatMapIndexed { index, query ->
             catchingOperation { findByTitle(query, expandSources = index < 2) }.getOrDefault(emptyList())
         })
-        val tokens = foldText(text).split(Regex("[^\\p{L}\\p{N}]+")).filter { it.length >= 3 }.toSet()
+        val tokens = foldText(boundedText).split(Regex("[^\\p{L}\\p{N}]+")).filter { it.length >= 3 }.toSet()
         candidates.map { book ->
             val titleTokens = foldText(book.title).split(Regex("[^\\p{L}\\p{N}]+")).filter { it.length >= 3 }.toSet()
             val authorTokens = foldText(book.author.orEmpty()).split(Regex("[^\\p{L}\\p{N}]+")).filter { it.length >= 3 }.toSet()
@@ -366,6 +385,4 @@ object BookCatalog {
         else -> null
     }
 
-    private fun String.normalizedIsbn(): String =
-        BookIdentity.canonicalIsbn(this).orEmpty()
 }

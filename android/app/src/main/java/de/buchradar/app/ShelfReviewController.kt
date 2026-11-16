@@ -3,6 +3,7 @@ package de.buchradar.app
 import android.graphics.Bitmap
 import de.buchradar.app.domain.catchingOperation
 import de.buchradar.app.network.CatalogBook
+import de.buchradar.app.network.CatalogAccess
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,7 +18,8 @@ data class ShelfLookupGroup(
     val pending: Boolean = true,
     val postponed: Boolean = false,
     val error: String? = null,
-    val revision: Long = 0
+    val revision: Long = 0,
+    val warnings: List<String> = emptyList()
 )
 
 data class ShelfReviewState(
@@ -105,7 +107,7 @@ class ShelfReviewController(
         update { old ->
             val found = old.groups.firstOrNull { it.id == id } ?: return@update old
             val corrected = found.copy(query = query.trim().take(2_000), candidates = emptyList(), pending = true,
-                postponed = false, error = null, revision = found.revision + 1)
+                postponed = false, error = null, revision = found.revision + 1, warnings = emptyList())
             old.copy(groups = listOf(corrected) + old.groups.filterNot { it.id == id })
         }
         frames.remove(id)
@@ -166,11 +168,12 @@ class ShelfReviewController(
                 while (isActive && active) {
                     val item = mutableState.value.groups.firstOrNull { it.pending && !it.postponed } ?: break
                     val frame = frames.remove(item.id)
-                    val result = catchingOperation { lookup(item.query, frame) }
+                    val result = catchingOperation { CatalogAccess.report { lookup(item.query, frame) } }
                     ensureActive()
                     update { old -> old.copy(groups = old.groups.map { current ->
                         if (current.id == item.id && current.revision == item.revision && !current.postponed)
-                            current.copy(candidates = result.getOrDefault(emptyList()).take(5), pending = false,
+                            current.copy(candidates = result.getOrNull()?.value.orEmpty().take(5), pending = false,
+                                warnings = result.getOrNull()?.warnings.orEmpty(),
                                 error = if (result.isFailure) "Katalogsuche fehlgeschlagen. Erneut versuchen oder den Text korrigieren." else null)
                         else current
                     }) }

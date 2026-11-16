@@ -23,4 +23,26 @@ class CatalogTest {
         assertEquals("B", match.fieldSources["author"])
         assertEquals(setOf("A", "B"), match.sources)
     }
+
+    @Test fun repeatedMergingRetainsOriginalFieldSourceAndConflictingYears() {
+        val first = BookCatalog.mergeCandidates(listOf(
+            CatalogBook("Titel", null, 1990, "9780804429573", sources = setOf("A")),
+            CatalogBook("Titel", "Autor", 2001, "9780804429573", sources = setOf("B")))).single()
+        val second = BookCatalog.mergeCandidates(listOf(first,
+            CatalogBook("TITEL", "Autor", 1990, "080442957X", sources = setOf("C")))).single()
+        assertEquals("9780804429573", second.isbn)
+        assertEquals("B, C", second.fieldSources["author"])
+        assertEquals(setOf("year"), second.conflictingFields)
+        assertEquals(setOf("1990", "2001"), second.fieldValues["year"]!!.map { it.value }.toSet())
+        assertEquals(setOf("A", "C"), second.fieldValues["year"]!!.first().sources)
+    }
+
+    @Test fun differentTitlesForSameIsbnStayVisibleAsConflict() {
+        val match = BookCatalog.mergeCandidates(listOf(
+            CatalogBook("Richtiger Titel", "Autor", null, "9780804429573", sources = setOf("A")),
+            CatalogBook("Anderer Titel", "Autor", null, "9780804429573", sources = setOf("B")))).single()
+        assertEquals("Richtiger Titel", match.title)
+        assertTrue("title" in match.conflictingFields)
+        assertEquals(2, match.fieldValues["title"]!!.size)
+    }
 }

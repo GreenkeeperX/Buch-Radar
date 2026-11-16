@@ -92,6 +92,7 @@ import de.buchradar.app.domain.BookIdentity
 import de.buchradar.app.data.BookEntity
 import de.buchradar.app.data.BuchRadarDatabase
 import de.buchradar.app.network.BookCatalog
+import de.buchradar.app.network.CatalogAccess
 import de.buchradar.app.network.CoverImageMatcher
 import de.buchradar.app.network.MomoxCatalog
 import de.buchradar.app.scanner.BookScannerView
@@ -222,8 +223,14 @@ class MainActivity : ComponentActivity() {
                                 singleSearchBusy = true
                                 message = "Suche Titel und Buchdaten …"
                                 scope.launch {
-                                    val lookup = catchingOperation { BookCatalog.findByIsbn(compact) }
-                                    val metadata = lookup.getOrNull()
+                                    val lookup = catchingOperation { CatalogAccess.report { BookCatalog.findByIsbn(compact) } }
+                                    val metadata = lookup.getOrNull()?.value
+                                    if (metadata != null && metadata.conflictingFields.any { it == "title" || it == "author" }) {
+                                        coverCandidates = listOf(metadata)
+                                        singleSearchBusy = false
+                                        message = "Die Quellen nennen unterschiedliche Titel oder Autoren zur ISBN. Bitte die Buchdaten vergleichen und den Treffer bestätigen."
+                                        return@launch
+                                    }
                                     val newBook = BookEntity(isbn = compact, title = metadata?.title, author = metadata?.author, publicationYear = metadata?.publicationYear, coverUrl = metadata?.coverUrl, metadataSource = metadata?.sources?.joinToString())
                                     val saved = catchingOperation { dao.insert(newBook) }
                                     if (saved.isFailure) {
@@ -240,7 +247,10 @@ class MainActivity : ComponentActivity() {
                                         saved.getOrNull() == -1L -> "Dieses Buch ist bereits gespeichert."
                                         lookup.isFailure -> "Katalog nicht erreichbar. ISBN gespeichert; Titel und Autor kannst du ergänzen."
                                         metadata == null -> "ISBN gespeichert, aber im Katalog nicht gefunden. Titel und Autor kannst du ergänzen."
-                                        else -> "Hinzugefügt: ${metadata.title}"
+                                        else -> listOfNotNull("Hinzugefügt: ${metadata.title}",
+                                            "Abweichende Katalogangaben – Ausgabe prüfen.".takeIf { metadata.conflictingFields.isNotEmpty() },
+                                            lookup.getOrNull()?.warnings?.joinToString(" ")?.takeIf(String::isNotBlank)
+                                        ).joinToString("\n")
                                     }
                                     if (saved.getOrNull() != -1L) session.scrollToBookId.value = newBook.id
                                 }
@@ -252,12 +262,14 @@ class MainActivity : ComponentActivity() {
                         message = "Suche Titel, Autor und Cover …"
                         scope.launch {
                             val result = catchingOperation {
-                                val matches = BookCatalog.findByRecognizedText(rawInput)
-                                (frame ?: coverFrame)?.let { CoverImageMatcher.rank(context, it, matches, visualOnly = visualCoverTest) } ?: matches
+                                val report = CatalogAccess.report { BookCatalog.findByRecognizedText(rawInput) }
+                                val ranked = (frame ?: coverFrame)?.let { CoverImageMatcher.rank(context, it, report.value, visualOnly = visualCoverTest) } ?: report.value
+                                report.copy(value = ranked)
                             }
-                            coverCandidates = result.getOrDefault(emptyList())
+                            coverCandidates = result.getOrNull()?.value.orEmpty()
                             message = when {
                                 result.isFailure -> "Buchkatalog nicht erreichbar."
+                                result.getOrNull()?.warnings?.isNotEmpty() == true -> result.getOrNull()?.warnings?.joinToString("\n")
                                 coverCandidates.isEmpty() -> "Keine passenden Treffer gefunden. Prüfe den Text oder tippe ihn oben ein."
                                 else -> null
                             }
@@ -463,6 +475,7 @@ class MainActivity : ComponentActivity() {
                                             if (group.pending) Text("Suche noch ausstehend …")
                                             else if (group.error != null) Text(group.error, color = MaterialTheme.colorScheme.error)
                                             else if (group.candidates.isEmpty()) Text("Kein passender Katalogtreffer. Korrigiere den Text, nutze die Kamera oder stelle den Fund für später zurück.", style = MaterialTheme.typography.bodyMedium)
+                                            group.warnings.forEach { Text(it, style = MaterialTheme.typography.bodyLarge) }
                                             group.candidates.forEach { candidate ->
                                                 val isActive = books.any { (it.id == "shelf:${group.id}" && it.title == candidate.title && it.author == candidate.author) || candidate.isbn != null && it.isbn == candidate.isbn }
                                                 val isSold = candidate.isbn?.let { isbn -> soldBooks.any { it.isbn == isbn } } == true
@@ -835,7 +848,7 @@ private fun CandidateCard(candidate: de.buchradar.app.network.CatalogBook, alrea
         Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             var coverFailed by remember(candidate.coverUrl) { mutableStateOf(candidate.coverUrl == null) }
             if (!coverFailed) AsyncImage(model = candidate.coverUrl, contentDescription = "Cover: ${candidate.title}", modifier = Modifier.size(width = 86.dp, height = 124.dp), onError = { coverFailed = true })
-            Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text(candidate.title, style = MaterialTheme.typography.titleLarge)
                 candidate.author?.let { Text(it, style = MaterialTheme.typography.bodyLarge) }
                 candidate.publisher?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
@@ -843,7 +856,17 @@ private fun CandidateCard(candidate: de.buchradar.app.network.CatalogBook, alrea
                 Text(candidate.isbn?.let { "ISBN ${displayIsbn(it)}" } ?: "Keine ISBN", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                 candidate.textSimilarity?.let { Text(when { it >= 85 -> "Titel und Autor passen gut"; it >= 60 -> "Möglicher Treffer – Ausgabe prüfen"; else -> "Unsicherer Treffer – sorgfältig vergleichen" }, style = MaterialTheme.typography.bodyMedium) }
                 candidate.visualSimilarity?.let { Text("Coverähnlichkeit: $it/100 · experimentell", style = MaterialTheme.typography.labelMedium) }
-                if (candidate.sources.isNotEmpty()) Text("Quelle: ${candidate.sources.joinToString()}", style = MaterialTheme.typography.bodySmall)
+                var showSources by remember(candidate.candidateId) { mutableStateOf(false) }
+                if (candidate.sources.isNotEmpty()) TextButton(onClick = { showSources = !showSources }) {
+                    Text(if (candidate.conflictingFields.isNotEmpty()) "Abweichende Angaben prüfen ▾" else "Quellen und Buchdaten ▾")
+                }
+                if (showSources) {
+                    Text("Quelle: ${candidate.sources.joinToString()}", style = MaterialTheme.typography.bodyMedium)
+                    candidate.fieldValues.forEach { (field, values) ->
+                        val label = when(field) { "title" -> "Titel"; "author" -> "Autor"; "year" -> "Jahr"; "publisher" -> "Verlag"; else -> field }
+                        values.forEach { value -> Text("$label: ${value.value} (${value.sources.joinToString()})", style = MaterialTheme.typography.bodyMedium) }
+                    }
+                }
                 Button(onClick = onClick, enabled = !alreadyAdded, modifier = Modifier.fillMaxWidth()) {
                     Text(when { alreadyAdded -> "Bereits in Liste"; isSold -> "Zurück in meine Bücher"; candidate.isbn == null -> "Ohne ISBN erfassen"; else -> "Buch hinzufügen" })
                 }

@@ -13,10 +13,19 @@ import kotlin.coroutines.coroutineContext
 
 class CatalogUnavailable(message: String) : Exception(message)
 
-private class SourceTrace : AbstractCoroutineContextElement(Key) {
+internal data class CatalogResult<T>(val value: T, val warnings: List<String>)
+
+private class SourceTrace(budgetMillis: Long) : AbstractCoroutineContextElement(Key) {
     companion object Key : CoroutineContext.Key<SourceTrace>
+    val deadline = System.nanoTime() / 1_000_000 + budgetMillis
     var successful = 0
     val failed = linkedSetOf<String>()
+    var budgetExhausted = false
+    fun remaining() = (deadline - System.nanoTime() / 1_000_000).coerceAtLeast(0)
+    fun warnings() = buildList {
+        if (failed.isNotEmpty()) add("Nicht alle Quellen erreichbar: ${failed.joinToString()}. Treffer können fehlen.")
+        if (budgetExhausted) add("Zeitlimit erreicht. Bisherige Treffer bleiben erhalten; bei Bedarf erneut suchen.")
+    }
 }
 
 /** Bounded in-memory cache. No book queries are written to diagnostic logs. */
@@ -30,12 +39,20 @@ internal object CatalogAccess {
 
     suspend fun <T> search(block: suspend () -> T): T {
         if (coroutineContext[SourceTrace] != null) return block()
-        val trace = SourceTrace()
+        return report(block = block).value
+    }
+
+    /** Nested ISBN/title/OCR lookups share one budget, including rate-limit waits. */
+    suspend fun <T> report(budgetMillis: Long = 30_000, block: suspend () -> T): CatalogResult<T> {
+        val existing = coroutineContext[SourceTrace]
+        if (existing != null) return CatalogResult(block(), existing.warnings())
+        require(budgetMillis > 0)
+        val trace = SourceTrace(budgetMillis)
         return withContext(trace) {
             val result = block()
-            if (trace.successful == 0 && trace.failed.isNotEmpty())
+            if (trace.successful == 0 && (trace.failed.isNotEmpty() || trace.budgetExhausted))
                 throw CatalogUnavailable("Katalog nicht erreichbar: ${trace.failed.joinToString()}. Bitte erneut versuchen.")
-            result
+            CatalogResult(result, trace.warnings())
         }
     }
 
@@ -48,14 +65,21 @@ internal object CatalogAccess {
             return it.value as T
         }
         val gate = synchronized(gates) { gates.getOrPut(source) { Mutex() } }
+        val remaining = trace?.remaining() ?: 12_000
+        if (remaining <= 0) { trace?.budgetExhausted = true; return null }
         val result = catchingOperation {
-            gate.withLock {
-                val wait = synchronized(lastRequest) { 1_100 - (System.nanoTime() / 1_000_000 - (lastRequest[source] ?: 0)) }
-                if (wait > 0) delay(wait)
-                synchronized(lastRequest) { lastRequest[source] = System.nanoTime() / 1_000_000 }
-                withContext(Dispatchers.IO) {
-                    withTimeoutOrNull(12_000) { block() } ?: throw CatalogUnavailable("Zeitüberschreitung")
+            withTimeoutOrNull(minOf(12_000, remaining)) {
+                gate.withLock {
+                    val wait = synchronized(lastRequest) { 1_100 - (System.nanoTime() / 1_000_000 - (lastRequest[source] ?: 0)) }
+                    if (wait > 0) delay(wait)
+                    synchronized(lastRequest) { lastRequest[source] = System.nanoTime() / 1_000_000 }
+                    withContext(Dispatchers.IO) {
+                        block()
+                    }
                 }
+            } ?: run {
+                if (trace != null && trace.remaining() <= 0) trace.budgetExhausted = true
+                throw CatalogUnavailable("Zeitüberschreitung")
             }
         }
         return result.getOrNull()?.also {

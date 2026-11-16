@@ -1,5 +1,6 @@
 # Umsetzung des Reviews
 
+Der vollständige Bereichsabgleich steht in [review-checklist.md](review-checklist.md).
 Die Umsetzung erfolgt in überprüfbaren Schritten. Experimentelle Qualität gilt erst
 nach Messung an freigegebenen Scanbeispielen als bestätigt.
 
@@ -41,8 +42,9 @@ nach Messung an freigegebenen Scanbeispielen als bestätigt.
    getrennte Messung von Barcode, gedruckter ISBN, Cover, alten Schriften und Regal.
 2. Echte Buchrückengrenzen und perspektivische Einzelzuschnitte statt alleiniger
    Textbox-Heuristik; Grenzfälle sichtbar zur Korrektur anbieten.
-3. Katalogsuche mit Gesamtzeitbudget, sichtbaren Teilfehlern und Feldkonflikten;
-   weitere Quellen erst nach geprüfter Schnittstelle und nachgewiesenem Nutzen.
+3. Feldherkunft dauerhaft am Buch speichern und Budgetverteilung zwischen Quellen
+   messen; Gesamtbudget und sichtbare Teilfehler/Konflikte sind ab 0.13 implementiert.
+   Weitere Quellen erst nach geprüfter Schnittstelle und nachgewiesenem Nutzen.
 4. Geometrisch ausgerichteter Coververgleich und Kalibrierung der Gewichtung an
    Referenzbildern. Ähnlichkeit nicht als sichere Identifikationswahrscheinlichkeit
    darstellen.
@@ -109,6 +111,21 @@ nach Messung an freigegebenen Scanbeispielen als bestätigt.
 - Android-Build und Lint erfolgreich, fünf Backend-Vertragstests erfolgreich.
 - Version 0.12.0 auf dem angeschlossenen Gerät installiert. Die reale Qualität
   der Regal-/Coveridentifikation ist dadurch weiterhin nicht nachgewiesen.
+
+## Katalogsuche 0.13.0
+- Gemeinsames Netzwerkbudget von 30 Sekunden pro ISBN-/OCR-Suche einschließlich
+  aller Varianten und Wartezeiten der Quelldrosselung. Frühe Treffer bleiben erhalten.
+- Sichtbare Hinweise bei ausgefallenen Quellen und Zeitlimit, auch in gespeicherten
+  Regal-Funden. Vollständiger Ausfall wird nicht als erfolgreiche Leersuche behandelt.
+- Widersprüchliche Titel, Autoren, Jahre und Verlage bleiben mit Quellenangaben
+  am Kandidaten erhalten; wiederholtes Zusammenführen bewahrt die Feldherkunft.
+- ISBN-Scans mit widersprüchlichem Titel/Autor verlangen eine Trefferbestätigung.
+  Automatisches Ergänzen bei Widersprüchen verändert die gespeicherten Angaben nicht.
+- Suchtext und Varianten begrenzt; DNB-Antworten mit Dokumenttyp-/Entitydeklarationen
+  abgelehnt. Die Kandidatenansicht kann Quellenangaben platzsparend aufklappen.
+- 38 JVM-Tests, zwölf Gerätetests, Build und Lint erfolgreich; 0.13.0 installiert.
+- Weiter offen: dauerhaftes Speichern der Feldbelege am bestätigten Buch, faire
+  Budgetverteilung bei sehr langsamen Quellen sowie gemessene Erkennungsqualität.
 
 ## Externe Voraussetzungen
 - Der bisherige Momox-Zugang ist nicht als öffentliche Schnittstelle zugesichert.

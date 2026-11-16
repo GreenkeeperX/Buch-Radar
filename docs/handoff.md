@@ -1,4 +1,4 @@
-# Übergabe: 0.12.0
+# Übergabe: 0.13.0
 
 ## Auftrag und Stand
 
@@ -18,14 +18,18 @@ Migration 4 → 5, persistente Momox-Aufträge, Angebotserhalt bei Fehlern, Verl
 ausgabenspezifische Katalogdaten, Scanner-Lebenszykluskorrekturen, Einstellungen,
 Sicherung und die Scroll-Absturzkorrektur nach Barcode-Scans.
 
-Verifiziert: 32 JVM-Tests, zwölf isolierte Gerätetests, fünf Backend-Vertragstests;
-Build und Lint erfolgreich. Gerät mit 0.12.0 aktualisiert.
+0.13.0 ergänzt ein gemeinsames Suchbudget, Hinweise auf ausgefallene Quellen und
+sichtbare Metadatenkonflikte. ISBN-Treffer mit widersprüchlichem Titel/Autor werden
+nicht ungefragt hinzugefügt. Vollständiger Bereichsabgleich: `review-checklist.md`.
+
+Verifiziert: 38 JVM-Tests, zwölf isolierte Gerätetests, fünf Backend-Vertragstests;
+Build und Lint erfolgreich. Gerät mit 0.13.0 aktualisiert.
 
 ## Nächste konkrete Arbeit
 
 1. Die noch offenen Review-Bereiche mit Codebelegen und Abnahmekriterien abgleichen.
 2. Erkennungsqualität messbar machen und räumliche Rücken-/Covererkennung verbessern.
-3. Katalogsuche insgesamt zeitlich begrenzen, Teilfehler und Metadatenkonflikte anzeigen.
+3. Feldbelege am bestätigten Buch speichern und die Budgetverteilung zwischen Quellen messen.
 4. UI-Verantwortlichkeiten aufteilen und Großschrift, TalkBack, Prozessende testen.
 5. Verkaufsvorbereitung/teilbare Liste, Produktionssignierung und Abhängigkeiten bearbeiten.
 
@@ -35,7 +39,7 @@ Momox-Vereinbarung keine Verfügbarkeit einer offiziellen Schnittstelle versprec
 
 ## Lokale und öffentliche Builds
 
-VersionName `0.12.0`, versionCode `24`, applicationId `de.buchradar.app`.
+VersionName `0.13.0`, versionCode `25`, applicationId `de.buchradar.app`.
 Die öffentliche Test-APK ist debug-signiert und ohne vorkonfigurierten Momox-Zugang.
 Ein lokal eingerichteter Build kann andere Zugangskonfiguration enthalten; niemals
 seine APK ungeprüft veröffentlichen. Quellcode und Lizenz sind identisch.
@@ -47,7 +51,7 @@ kein unangekündigtes Force-Push. Das Quellcode-ZIP enthält keine Git-Historie.
 
 ## Weiterarbeit mit Claude
 
-Repository klonen oder das Release-Archiv `Buecher-Radar-0.12.0-Claude.zip` entpacken.
+Repository klonen oder das Release-Archiv `Buecher-Radar-0.13.0-Claude.zip` entpacken.
 Claude Code im Projektordner starten; `CLAUDE.md` ist der Einstieg.
 Für eine Unterhaltung ohne Repositoryzugriff das ZIP bereitstellen, sofern die
 verwendete Oberfläche Archive unterstützt. Verfügbare Werkzeuge und Android-SDK

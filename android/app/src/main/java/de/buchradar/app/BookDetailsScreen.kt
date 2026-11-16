@@ -14,6 +14,7 @@ import de.buchradar.app.data.BookEntity
 import de.buchradar.app.data.BuchRadarDatabase
 import de.buchradar.app.domain.catchingOperation
 import de.buchradar.app.network.BookCatalog
+import de.buchradar.app.network.CatalogAccess
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.text.NumberFormat
@@ -41,12 +42,20 @@ fun BookDetailsScreen(original: BookEntity, onClose: () -> Unit) {
                 item { OutlinedButton(enabled = !loading && book.isbn.isNotBlank(), onClick = { scope.launch {
                     loading = true
                     val result = catchingOperation {
-                        val metadata = BookCatalog.findByIsbn(book.isbn)
-                        if (metadata != null) dao.fillMissingMetadata(book.id, book.isbn, metadata.title, metadata.author, metadata.publicationYear, metadata.coverUrl, metadata.sources.joinToString())
-                        metadata
+                        val report = CatalogAccess.report { BookCatalog.findByIsbn(book.isbn) }
+                        val metadata = report.value
+                        if (metadata != null && metadata.conflictingFields.isEmpty()) dao.fillMissingMetadata(book.id, book.isbn, metadata.title, metadata.author, metadata.publicationYear, metadata.coverUrl, metadata.sources.joinToString())
+                        report
                     }
                     loading = false
-                    message = result.fold({ if (it == null) "Keine weiteren Buchdaten gefunden." else "Fehlende Buchdaten ergänzt." }, { "Katalog nicht erreichbar. Bitte erneut versuchen." })
+                    message = result.fold({ report ->
+                        val status = when {
+                            report.value == null -> "Keine weiteren Buchdaten gefunden."
+                            report.value.conflictingFields.isNotEmpty() -> "Die Kataloge widersprechen sich. Keine Angaben verändert; bitte das Buch manuell bearbeiten."
+                            else -> "Fehlende Buchdaten ergänzt."
+                        }
+                        (listOf(status) + report.warnings).joinToString("\n")
+                    }, { "Katalog nicht erreichbar. Bitte erneut versuchen." })
                 } }) { Text(if(loading) "Suche Buchdaten …" else "Fehlende Buchdaten ergänzen") } }
                 item { message?.let { Text(it) }; HorizontalDivider(); Text("Prüfverlauf", style = MaterialTheme.typography.titleLarge) }
                 if (history.isEmpty()) item { Text("Noch kein gespeicherter Verlauf. Neue Prüfungen erscheinen hier.") }
