@@ -431,12 +431,14 @@ class MainActivity : ComponentActivity() {
                                 submitInput(searchInput, frame)
                                 }
                             },
-                            onShelfConfirmed = { spines, _ ->
+                            onShelfConfirmed = { spines, image, warning ->
                                 AppLog.add(context, "Regal-OCR übernommen (${spines.size} Buchrücken)")
                                 shelfCorrectionQuery = null
                                 searchInput = ""
                                 coverFrame = null
                                 searchShelf(spines)
+                                message = warning
+                                image.recycle()
                             },
                             onClose = { scannerOpen = false; shelfCorrectionQuery = null; if (shelfReviewOpen) session.shelfReview.resume() }
                         )

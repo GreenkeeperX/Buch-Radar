@@ -1,0 +1,246 @@
+{
+  "version": 1,
+  "description": "Small public still-image benchmark; not a representative camera accuracy claim. No ISBNs asserted for these editions.",
+  "images": [
+    {
+      "file": "fontane-stechlin.jpg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/3/37/Theodor_Fontane_Der_Stechlin.jpg",
+      "source": "https://commons.wikimedia.org/wiki/File:Theodor_Fontane_Der_Stechlin.jpg",
+      "credit": "Foto H.-P.Haack",
+      "license": "CC BY 3.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by/3.0/",
+      "sha256": "ca1807abcc86837d63ed78db2215b30fa3ede554ec767f95fb07329eb59642f9",
+      "mode": "single",
+      "expectedTokens": [
+        "theodor",
+        "fontane",
+        "stechlin"
+      ]
+    },
+    {
+      "file": "fontane-kinderjahre.jpg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/a/a6/Theodor_Fontane_Meine_Kinderjahre.jpg",
+      "source": "https://commons.wikimedia.org/wiki/File:Theodor_Fontane_Meine_Kinderjahre.jpg",
+      "credit": "Foto H.-P.Haack",
+      "license": "CC BY-SA 3.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+      "sha256": "edc45bd83085551cb347b840470b616691c553fb4de67565cfacd940688e60ae",
+      "mode": "single",
+      "expectedTokens": [
+        "theodor",
+        "fontane",
+        "meine",
+        "kinderjahre"
+      ]
+    },
+    {
+      "file": "shelf-mixed-german.jpg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/6/6a/Part_of_a_bookshelf_with_mixed_books%2C_mostly_in_German_%281%29.jpg",
+      "source": "https://commons.wikimedia.org/wiki/File:Part_of_a_bookshelf_with_mixed_books,_mostly_in_German_(1).jpg",
+      "credit": "© Roman Eisele / CC BY-SA 4.0",
+      "license": "CC BY-SA 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "sha256": "f356eefd0415ddf09997337eeee2952b5dae219957f2636c3ebd73eef4f79d16",
+      "mode": "shelf",
+      "expectedTokens": [],
+      "regions": [
+        {
+          "left": 0.01328125,
+          "right": 0.0703125,
+          "tokens": [
+            "hedin",
+            "grosse",
+            "fahrt"
+          ]
+        },
+        {
+          "left": 0.071875,
+          "right": 0.14375,
+          "tokens": [
+            "nansen",
+            "nacht",
+            "eis"
+          ]
+        },
+        {
+          "left": 0.14453125,
+          "right": 0.21640625,
+          "tokens": [
+            "nansen",
+            "nacht",
+            "eis"
+          ]
+        },
+        {
+          "left": 0.21875,
+          "right": 0.2734375,
+          "tokens": [
+            "sven",
+            "hedin",
+            "transhimalaja"
+          ]
+        },
+        {
+          "left": 0.27421875,
+          "right": 0.33203125,
+          "tokens": [
+            "sven",
+            "hedin",
+            "transhimalaja"
+          ]
+        },
+        {
+          "left": 0.33359375,
+          "right": 0.37890625,
+          "tokens": [
+            "umberto",
+            "eco",
+            "geschichte",
+            "legendaren",
+            "lander",
+            "stadte"
+          ]
+        },
+        {
+          "left": 0.3796875,
+          "right": 0.43671875,
+          "tokens": [
+            "georg",
+            "christoph",
+            "lichtenberg",
+            "schriften"
+          ]
+        },
+        {
+          "left": 0.4375,
+          "right": 0.4859375,
+          "tokens": [
+            "michel",
+            "montaigne",
+            "tagebuch",
+            "reise",
+            "italien"
+          ]
+        },
+        {
+          "left": 0.4859375,
+          "right": 0.528125,
+          "tokens": [
+            "henno",
+            "martin",
+            "krieg",
+            "wuste"
+          ]
+        },
+        {
+          "left": 0.52890625,
+          "right": 0.575,
+          "tokens": [
+            "sonnleitner",
+            "hohlenkinder",
+            "steinhaus"
+          ]
+        },
+        {
+          "left": 0.57578125,
+          "right": 0.621875,
+          "tokens": [
+            "sonnleitner",
+            "hohlenkinder",
+            "pfahlbau"
+          ]
+        },
+        {
+          "left": 0.62265625,
+          "right": 0.68046875,
+          "tokens": [
+            "tom",
+            "reiss",
+            "orientalist"
+          ]
+        },
+        {
+          "left": 0.68125,
+          "right": 0.73984375,
+          "tokens": [
+            "hofstadter",
+            "godel",
+            "escher",
+            "bach"
+          ]
+        },
+        {
+          "left": 0.740625,
+          "right": 0.78359375,
+          "tokens": [
+            "cathedral",
+            "bazaar",
+            "eric",
+            "raymond"
+          ]
+        },
+        {
+          "left": 0.78515625,
+          "right": 0.821875,
+          "tokens": [
+            "jorge",
+            "luis",
+            "borges",
+            "gesammelte",
+            "werke"
+          ]
+        },
+        {
+          "left": 0.82265625,
+          "right": 0.859375,
+          "tokens": [
+            "jorge",
+            "luis",
+            "borges",
+            "erzahlungen"
+          ]
+        },
+        {
+          "left": 0.86015625,
+          "right": 0.89609375,
+          "tokens": [
+            "jorge",
+            "luis",
+            "borges",
+            "erzahlungen"
+          ]
+        },
+        {
+          "left": 0.896875,
+          "right": 0.92734375,
+          "tokens": [
+            "jorge",
+            "luis",
+            "borges",
+            "erzahlungen"
+          ]
+        },
+        {
+          "left": 0.928125,
+          "right": 0.946875,
+          "tokens": [
+            "jorge",
+            "luis",
+            "borges",
+            "handwerk",
+            "dichters"
+          ]
+        },
+        {
+          "left": 0.94765625,
+          "right": 0.9890625,
+          "tokens": [
+            "borges",
+            "ewiger",
+            "traum"
+          ]
+        }
+      ]
+    }
+  ]
+}

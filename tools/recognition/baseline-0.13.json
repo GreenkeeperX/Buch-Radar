@@ -1,0 +1,95 @@
+{
+  "version": "0.13.0",
+  "scope": "Small public still-image set, not representative camera accuracy",
+  "cases": [
+    {
+      "file": "fontane-stechlin.jpg",
+      "rotation": 0,
+      "maxSize": 1280,
+      "elapsedMillis": 3141,
+      "groups": 2,
+      "pieces": 5,
+      "expectedTokens": 3,
+      "recognizedTokens": 2
+    },
+    {
+      "file": "fontane-stechlin.jpg",
+      "rotation": 90,
+      "maxSize": 1280,
+      "elapsedMillis": 2489,
+      "groups": 5,
+      "pieces": 5,
+      "expectedTokens": 3,
+      "recognizedTokens": 1
+    },
+    {
+      "file": "fontane-stechlin.jpg",
+      "rotation": 270,
+      "maxSize": 1280,
+      "elapsedMillis": 2467,
+      "groups": 5,
+      "pieces": 5,
+      "expectedTokens": 3,
+      "recognizedTokens": 1
+    },
+    {
+      "file": "fontane-kinderjahre.jpg",
+      "rotation": 0,
+      "maxSize": 1280,
+      "elapsedMillis": 2500,
+      "groups": 2,
+      "pieces": 6,
+      "expectedTokens": 4,
+      "recognizedTokens": 2
+    },
+    {
+      "file": "fontane-kinderjahre.jpg",
+      "rotation": 90,
+      "maxSize": 1280,
+      "elapsedMillis": 2539,
+      "groups": 5,
+      "pieces": 6,
+      "expectedTokens": 4,
+      "recognizedTokens": 1
+    },
+    {
+      "file": "fontane-kinderjahre.jpg",
+      "rotation": 270,
+      "maxSize": 1280,
+      "elapsedMillis": 2504,
+      "groups": 4,
+      "pieces": 5,
+      "expectedTokens": 4,
+      "recognizedTokens": 1
+    },
+    {
+      "file": "shelf-mixed-german.jpg",
+      "rotation": 0,
+      "maxSize": 1280,
+      "elapsedMillis": 3979,
+      "groups": 14,
+      "pieces": 22,
+      "expectedTokens": 0,
+      "recognizedTokens": 0,
+      "expectedRegions": 20,
+      "cleanReadableRegions": 2,
+      "mergedGroups": 1,
+      "splitRegions": 3
+    },
+    {
+      "file": "shelf-mixed-german.jpg",
+      "rotation": 0,
+      "maxSize": 2560,
+      "elapsedMillis": 5286,
+      "groups": 22,
+      "pieces": 41,
+      "expectedTokens": 0,
+      "recognizedTokens": 0,
+      "expectedRegions": 20,
+      "cleanReadableRegions": 6,
+      "mergedGroups": 1,
+      "splitRegions": 5
+    }
+  ],
+  "notes": "Eight variants of three public images; no general camera accuracy claim. First cold OCR includes model startup."
+}

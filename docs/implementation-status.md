@@ -127,6 +127,24 @@ nach Messung an freigegebenen Scanbeispielen als bestätigt.
 - Weiter offen: dauerhaftes Speichern der Feldbelege am bestätigten Buch, faire
   Budgetverteilung bei sehr langsamen Quellen sowie gemessene Erkennungsqualität.
 
+## Regal-Bildregionen 0.14.0
+- Öffentlicher, herunterladbarer Bildtestsatz mit drei dokumentierten Fotos,
+  Quellen, Lizenzangaben und Prüfsummen. Opt-in-Benchmark läuft lokal auf Android.
+- Lange Farbübergänge liefern mögliche Rückenbegrenzungen. Die Bildbereiche werden
+  vor der OCR getrennt und moderat entzerrt; kurze Schriftkanten sollen keine
+  Buchgrenze erzeugen. Vorhandene vertikale Textkästen schützen vor falschen Schnitten.
+- Kleine Raster getrennter Zuschnitte begrenzen die Zahl der OCR-Aufrufe. Wörter
+  werden nach Bildregion zugeordnet; gedrehte Lesungen nach OCR-Evidenz gewichtet.
+- Automatische und manuelle Regalübernahme verwenden denselben zusätzlichen
+  Bilddurchlauf. Unlesbare Bereiche oder ein erreichtes Zeitlimit werden gemeldet.
+- Kamera fordert eine höhere Analyseauflösung an, soweit vom Gerät unterstützt;
+  Arbeitsbilder bleiben auf 1920 Pixel begrenzt. Bitmaps werden nach Übergabe oder
+  Abbruch freigegeben; die Regal-Fortsetzung speichert weiterhin keine Bilder.
+- Grenzen: Kantenheuristik für überwiegend aufrecht stehende Bücher, noch keine
+  robuste Verfolgung mehrerer Regalreihen. Keine allgemeine Erkennungsquote und
+  keine verbesserte Frakturlesung behauptet. Gemessene Resultate unter
+  `tools/recognition/`; Einzelfoto-Verbesserungen sind kein Nachweis für alle Regale.
+
 ## Externe Voraussetzungen
 - Der bisherige Momox-Zugang ist nicht als öffentliche Schnittstelle zugesichert.
   Ein offizieller Zugang muss mit dem Anbieter geklärt werden. Die FAQ erwähnt

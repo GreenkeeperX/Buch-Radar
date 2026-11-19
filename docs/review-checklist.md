@@ -23,10 +23,10 @@ Mechanismus vorhanden, Restarbeit/Abnahme offen; **offen** = noch nicht erledigt
 | R09 | Suchbudget, Cache, Quellenfehler, Metadatenkonflikte | teilweise | 0.13: `CatalogAccess`, `fieldValues`, gezielte Tests | Konflikte dauerhaft pro Buch speichern; Verteilung des Budgets zwischen Quellen messen |
 | R10 | OCR-Abweichungen, Umlaute, Autor vorne/hinten | teilweise | Varianten, Tokenbewertung | Referenzfälle und Top-5-Trefferquote, kurze/generische Titel |
 | R11 | Kamera-Lebenszyklus, Rotation, Backpressure, Ressourcen | teilweise | `BookScannerView`, lokale OCR, Cleanup | Langlauf-, Speicher- und Rotationstests auf Gerät |
-| R12 | Sichtbare echte Rückenregionen, gedrehte Schrift, Regionstracking | offen | Bisher nur OCR-Textbox-Heuristik | Nachbarn nicht vermischen; Namen je Rücken zusammenhalten |
+| R12 | Sichtbare Rückenregionen, gedrehte Schrift, Regionstracking | teilweise | 0.14: Bildkanten, getrennte Zuschnitte/OCR, Schrägkorrektur | Mehrere Regalreihen, sichtbare Regionen/Tracking, unabhängige Bildfälle |
 | R13 | Auslösezeitpunkt, Bildqualität, Szenenerkennung | teilweise | `RecognitionStability`, Bildruhe und Konturen | Messung falscher Auslösungen, Buchseite gegen Regal |
 | R14 | Coverentzerrung, Zuschnitt, Bildvergleich kalibrieren | offen | Bisher mittiger Zuschnitt/Hash/Histogramm | Vergleich mit/ohne Bildbonus auf identischen Kandidaten |
-| R15 | Erkennungsbenchmark mit schwierigen Referenzfällen | offen / extern | Bisher synthetische Regressionstests | Lokale freigegebene Aufnahmen, Sollregionen/ISBNs, reproduzierbarer Bericht |
+| R15 | Erkennungsbenchmark mit schwierigen Referenzfällen | teilweise | 0.14: drei öffentliche Bilder, markierte Regalregionen, reproduzierbarer Android-Bericht | Mehr unabhängige Bilder, bestätigte Soll-ISBNs, Live-Bewegung und Katalogtrefferquote |
 | R16 | Navigation, sichere Insets, klare Reiter und Einstellungen | teilweise | Eigene Ansichten, SafeDrawingPadding, Geräteprüfung | Kleine Displays, Querformat, vollständiger Bedienablauf |
 | R17 | Großschrift, Touch-Ziele, TalkBack, Farbe nicht allein | teilweise | Größere Texte, Tab-/Auswahlsemantik | Automatisierte Großschrift-/Semantiktests, TalkBack am Gerät |
 | R18 | UI/Logik trennen, Prozesswiederherstellung | teilweise | ViewModel, separate Settings/Details/ShelfController | Hauptansicht zerlegen; übrigen Eingabe-/Auswahlzustand wiederherstellen |

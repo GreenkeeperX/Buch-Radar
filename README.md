@@ -21,6 +21,7 @@ exportieren; unterschiedliche Signaturen erlauben kein direktes Update.
 - ISBN-/Titelsuche über Open Library, Google Books und DNB; konkrete Open-Library-
   Ausgaben statt Kombination beliebiger ISBNs mit Werkdaten.
 - Barcode und lokale OCR mit Einzelbuch-, Regal- und experimentellem Covermodus.
+- Bildgestützte Trennung und separate OCR möglicher Buchrücken im Regal.
 - Regal-Funde lokal fortsetzen, korrigieren und für später zurückstellen;
   erkannte Texte und Treffer bleiben auch nach einem App-Neustart erhalten.
 - Lokale Liste, Bearbeitung, Auswahl, verkauftes Archiv und Bücher ohne ISBN.
@@ -73,6 +74,9 @@ ausdrücklich Testversionen. Zugangswerte dürfen nicht in öffentliche APKs gel
 ./gradlew testDebugUnitTest lintDebug
 ./gradlew connectedDebugAndroidTest
 ```
+
+Optionaler lokaler Bildbenchmark: [Anleitung und öffentliche Bildquellen](tools/recognition/README.md).
+Der kleine Testsatz ersetzt keine Erprobung an unterschiedlichen realen Regalen.
 
 Die Gerätetests verwenden separate Testdatenbanken. Keine private Bücherliste
 oder private Kameraaufnahme in das öffentliche Repository übernehmen.
