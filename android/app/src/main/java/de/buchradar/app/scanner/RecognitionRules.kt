@@ -65,5 +65,45 @@ internal fun groupSpines(pieces: List<OcrPiece>, imageWidth: Int, imageHeight: I
 internal fun spineText(pieces: List<OcrPiece>): String {
     val angle = pieces.map { it.angle }.average()
     val ordered = if (angle < -55) pieces.sortedByDescending { it.y } else pieces.sortedBy { it.y }
-    return ordered.map { it.text }.distinct().joinToString("\n")
+    return cleanSpineText(ordered.map { it.text }.distinct().joinToString("\n"))
+}
+
+/**
+ * Removes OCR stutter on one spine: the same word read twice (0°/90°/270° passes, spaced
+ * capitals), near-identical variants ("Transhimalaa Transhimalaja") and lines that repeat
+ * text already contained in another line. Only applied within a single spine's text.
+ */
+internal fun cleanSpineText(text: String): String {
+    fun compact(value: String) = foldOcr(value).replace(" ", "")
+    fun bigrams(value: String) = value.windowed(2).toSet()
+    fun similar(a: String, b: String): Boolean {
+        if (a.length < 5 || b.length < 5) return false
+        val x = bigrams(a); val y = bigrams(b)
+        return 2f * x.intersect(y).size / (x.size + y.size) >= .8f
+    }
+    val lines = text.lines().map { line ->
+        val kept = mutableListOf<String>()
+        for (word in line.split(' ').filter(String::isNotBlank)) {
+            val previous = kept.lastOrNull()
+            if (previous != null) {
+                val a = compact(previous); val b = compact(word)
+                if (a.isNotEmpty() && a == b) continue
+                if (similar(a, b)) { if (b.length > a.length) kept[kept.lastIndex] = word; continue }
+            }
+            kept += word
+        }
+        kept.joinToString(" ")
+    }.filter { compact(it).isNotEmpty() }
+    val result = lines.filterIndexed { index, line ->
+        val key = compact(line)
+        lines.withIndex().none { (other, candidate) ->
+            if (other == index) return@none false
+            val otherKey = compact(candidate)
+            // Lines with digits (volume numbers, years) are never treated as redundant.
+            val redundant = key.none(Char::isDigit) && otherKey.length > key.length && (otherKey.contains(key) || similar(key, otherKey))
+            // Identical lines: keep only the first occurrence.
+            redundant || otherKey == key && other < index
+        }
+    }
+    return result.joinToString("\n")
 }

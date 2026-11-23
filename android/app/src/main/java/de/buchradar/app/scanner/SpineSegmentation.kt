@@ -92,7 +92,7 @@ internal suspend fun readShelfRegions(bitmap: Bitmap, recognizer: TextRecognizer
         val reading = readings.firstOrNull { abs(it.left - left.x / bitmap.width) < .0001f }
         val existing = protectedPieces.filter { p -> p.left >= left.at(p.y, bitmap.height) && p.right <= right.at(p.y, bitmap.height) }
         val fallback = spineText(existing)
-        ShelfRegionText(reading?.text?.takeIf { it.count(Char::isLetter) >= 4 } ?: fallback, left.x / bitmap.width, right.x / bitmap.width)
+        ShelfRegionText(reading?.text?.let(::cleanSpineText)?.takeIf { it.count(Char::isLetter) >= 4 } ?: fallback, left.x / bitmap.width, right.x / bitmap.width)
     }
     return ShelfImageResult(supplemented, regions.size, exhausted)
 }
