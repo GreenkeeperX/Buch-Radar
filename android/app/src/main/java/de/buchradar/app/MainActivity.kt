@@ -324,7 +324,7 @@ class MainActivity : ComponentActivity() {
                             return@launch
                         }
                         // The check history stays keyed by ISBN, so undo restores the full book.
-                        showUndo("„${book.title ?: "Buch"}“ entfernt") { dao.insert(book) }
+                        showUndo(book.title?.let { "„$it“ entfernt" } ?: "Buch entfernt") { dao.insert(book) }
                     }
                 }
                 LaunchedEffect(checkRun) {

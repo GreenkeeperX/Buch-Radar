@@ -169,9 +169,9 @@ private fun ChoiceMenu(label: String, choices: List<Pair<String, String>>, onCha
 
 @Composable
 private fun NavRow(label: String, onClick: () -> Unit) {
-    ListItem(
-        headlineContent = { Text(label, style = MaterialTheme.typography.bodyLarge) },
-        trailingContent = { Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
-    )
+    // Aligned with section titles and body text (no extra ListItem inset).
+    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(onClick = onClick), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+        Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
+    }
 }
