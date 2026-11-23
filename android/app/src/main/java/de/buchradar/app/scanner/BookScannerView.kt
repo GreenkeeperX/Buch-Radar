@@ -6,6 +6,9 @@ import android.os.SystemClock
 import android.util.Size
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.core.UseCaseGroup
 import androidx.camera.core.resolutionselector.ResolutionSelector
@@ -103,6 +106,7 @@ fun BookScannerView(
         var provider: ProcessCameraProvider? = null
         var previewUseCase: Preview? = null
         var analysis: ImageAnalysis? = null
+        var capture: ImageCapture? = null
         var latestOwned: Bitmap? = null
         var transferredFrame: Bitmap? = null
         var previousSample: IntArray? = null
@@ -216,7 +220,7 @@ fun BookScannerView(
                         if (text.isNotBlank() && (ready || manualRequested.get()) && delivered.compareAndSet(false, true)) {
                             manualRequested.set(false)
                             withContext(Dispatchers.Main) { finalizing = true; if (isShelf) hint = "Buchrücken werden getrennt gelesen – einen Moment …" }
-                            val separated = if (isShelf) readShelfRegions(image, recognizer, protectedPieces = pieces) else null
+                            val separated = if (isShelf) readShelfWithStill(context, capture, image, pieces, recognizer) else null
                             ensureActive()
                             withContext(Dispatchers.Main) {
                                 if (latestOwned !== image) latestOwned?.recycle()
@@ -247,8 +251,19 @@ fun BookScannerView(
             withContext(Dispatchers.Main.immediate) {
                 active.unbindAll()
                 // FIT_CENTER exposes the full analysis region; share a viewport when it is ready.
-                val group = UseCaseGroup.Builder().addUseCase(cameraPreview).addUseCase(analyzer).apply { preview.viewPort?.let { setViewPort(it) } }.build()
-                active.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, group)
+                fun group(still: ImageCapture?) = UseCaseGroup.Builder().addUseCase(cameraPreview).addUseCase(analyzer)
+                    .apply { still?.let { addUseCase(it) }; preview.viewPort?.let { setViewPort(it) } }.build()
+                // A still image gives shelf reading more pixels than the analysis stream.
+                val still = ImageCapture.Builder().setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                    .setResolutionSelector(ResolutionSelector.Builder().setResolutionStrategy(ResolutionStrategy(Size(2592, 1944), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER)).build()).build()
+                try {
+                    active.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, group(still))
+                    capture = still
+                } catch (unsupported: IllegalArgumentException) {
+                    AppLog.add(context, "Kamera: kein zusätzliches Foto möglich, Regal nutzt Vorschaubild")
+                    active.unbindAll()
+                    active.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, group(null))
+                }
             }
             awaitCancellation()
         } catch (cancelled: CancellationException) { throw cancelled }
@@ -259,12 +274,63 @@ fun BookScannerView(
             withContext(NonCancellable) { worker.coroutineContext[Job]?.join() }
             // An earlier screen may finish cleanup after the next scanner has already bound.
             withContext(NonCancellable + Dispatchers.Main.immediate) {
-                provider?.unbind(*listOfNotNull(previewUseCase, analysis).toTypedArray())
+                provider?.unbind(*listOfNotNull(previewUseCase, analysis, capture).toTypedArray())
             }
             barcodeScanner.close(); recognizer.close(); executor.shutdown()
             if (latestOwned !== transferredFrame) latestOwned?.recycle()
         }
     }
+}
+
+/**
+ * Reads shelf regions from a fresh still image when its framing matches the analysed frame;
+ * otherwise, or if capturing fails or takes too long, from the analysed frame itself.
+ */
+private suspend fun readShelfWithStill(context: android.content.Context, capture: ImageCapture?, frame: Bitmap,
+    pieces: List<OcrPiece>, recognizer: com.google.mlkit.vision.text.TextRecognizer): ShelfImageResult? {
+    val still = capture?.let { captureStill(context, it, maxSide = 2560) }
+    if (still == null || still.width <= frame.width ||
+        abs(still.width.toFloat() / still.height - frame.width.toFloat() / frame.height) > .02f * frame.width / frame.height) {
+        still?.recycle()
+        return readShelfRegions(frame, recognizer, protectedPieces = pieces)
+    }
+    return try {
+        val f = still.width.toFloat() / frame.width
+        AppLog.add(context, "Regal: Foto ${still.width}×${still.height} statt ${frame.width}×${frame.height}")
+        readShelfRegions(still, recognizer, protectedPieces = pieces.map { p ->
+            p.copy(left = p.left * f, top = p.top * f, right = p.right * f, bottom = p.bottom * f)
+        })
+    } finally { still.recycle() }
+}
+
+/** Takes one picture, upright and scaled to [maxSide]; null on error or after four seconds. */
+private suspend fun captureStill(context: android.content.Context, capture: ImageCapture, maxSide: Int): Bitmap? {
+    val proxy = withTimeoutOrNull(4_000) {
+        suspendCancellableCoroutine<ImageProxy?> { continuation ->
+            capture.takePicture(ContextCompat.getMainExecutor(context), object : ImageCapture.OnImageCapturedCallback() {
+                override fun onCaptureSuccess(image: ImageProxy) {
+                    // A late picture after timeout or closing must still be released.
+                    if (continuation.isActive) continuation.resume(image) else image.close()
+                }
+                override fun onError(exception: ImageCaptureException) {
+                    AppLog.add(context, "Regal-Foto fehlgeschlagen (${exception.imageCaptureError})")
+                    if (continuation.isActive) continuation.resume(null)
+                }
+            })
+        }
+    } ?: return null
+    return try {
+        val raw = proxy.toBitmap()
+        val scale = minOf(1f, maxSide.toFloat() / maxOf(raw.width, raw.height))
+        val matrix = Matrix().apply { postRotate(proxy.imageInfo.rotationDegrees.toFloat()); postScale(scale, scale) }
+        val upright = Bitmap.createBitmap(raw, 0, 0, raw.width, raw.height, matrix, true)
+        if (upright !== raw) raw.recycle()
+        upright
+    } catch (error: Exception) {
+        if (error is CancellationException) throw error
+        AppLog.add(context, "Regal-Foto nicht lesbar (${error.javaClass.simpleName})")
+        null
+    } finally { proxy.close() }
 }
 
 /** Keep ImageProxy alive until ML Kit is finished, even when the screen closes. */
