@@ -168,8 +168,31 @@ nach Messung an freigegebenen Scanbeispielen als bestätigt.
   Datenbankfehler ab. Rückgängig per Snackbar für Entfernen und Verkauft-Markieren.
 - Filter/Sortierung/Summen in `domain/BookListQuery.kt` mit JVM-Tests; Karten und
   Dialoge in `BookCards.kt`. Kein Schemawechsel.
-- Offen: Gerätetests und Sichtprüfung auf dem Smartphone, Großschrift/TalkBack-Abnahme,
+- Design-Review (Heuristiken, Screenshots vom Gerät): Scannen als schwebender Knopf
+  unten, Momox-Prüfung und letztes Ergebnis in einer Zeile, nur ein angebotener Preis
+  als farbiger Chip, Filter-Chips mit Anzahl, Sortierung als Symbolknopf, Kartenaktionen
+  auch in den Buchdetails, Darstellung als Segmentknopf.
+- Zweitprüfung (statisch, Codex) behoben: Listen-Keys getrennt (importierte ID
+  „list-header“ hätte die Liste abstürzen lassen), Rückgängig stellt die tatsächlich
+  gelöschte Zeile wieder her und liegt im ViewModel (übersteht Drehen), veraltete
+  Pausierantwort hält die Warteschlange nicht mehr an, verweigerte Kamera setzt die
+  Regal-Bearbeitung fort, mehrzeilige Eingabe wird nie zu einer ISBN verbunden.
+- Offen: Großschrift/TalkBack-Abnahme, Rückgängig nach Drehen am Gerät,
   weitere Aufteilung von `MainActivity` (Regal- und Trefferansicht).
+
+## Erkennung (nach 0.14.0, unveröffentlicht)
+- ISBN aus Text: bis zu zwei Trenner zwischen Ziffern (OCR liest „-“ als „.“) und
+  Klarschriftzeile unter dem Barcode mit typischen Fehllesungen; nur 978/979 mit
+  gültiger Prüfziffer. Pixel 9a, 3 öffentliche ISBN-Fotos: vorher 14/18 Fälle,
+  nachher 24/24 ISBNs in allen 18 Fällen, keine Falschtreffer (`tools/recognition`).
+- Buchrücken: Stotter-/Doppellesungen werden je Rücken entfernt (`cleanSpineText`).
+- Regal: Beim Abschluss ein hochauflösendes Foto (Ziel 2592×1944, max. 2560 px) statt
+  des Analysebilds (1920×1440); Rückfall auf das Analysebild. Wirkung am Gerät noch
+  nicht gemessen.
+- Scanner hing am Gerät bei „Noch ruhig halten“ (Bewegungswerte 18–58 über der
+  Grenze 8; Regaltext nie zweimal identisch, daher Knopf gesperrt). Jetzt: Grenze 12,
+  Helligkeitsänderung/Flackern wird herausgerechnet, Regal stabil ab 70 %
+  Wortüberlappung. Kompaktere Bedienleisten im Querformat. Nachweis am Gerät offen.
 
 ## Externe Voraussetzungen
 - Der bisherige Momox-Zugang ist nicht als öffentliche Schnittstelle zugesichert.
