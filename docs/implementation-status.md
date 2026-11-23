@@ -156,6 +156,21 @@ nach Messung an freigegebenen Scanbeispielen als bestätigt.
 - Langlauf, Drehung während laufender OCR und allgemeine Erkennungsqualität bleiben
   weitere Abnahmen.
 
+## Oberfläche und Listenaktionen (nach 0.14.0, unveröffentlicht)
+- Eigenes Farbschema hell/dunkel aus den Farben des App-Symbols, semantische
+  Statusfarben (`ui/Theme.kt`), Material-Icons statt Textzeichen, Fenster-Theme
+  ohne weißes Aufblitzen beim Start im Dunkelmodus.
+- Navigationsleiste mit Anzahl, Filter-Chips, Gesamt-Ankaufwert, Fortschrittsbalken
+  der Momox-Prüfung, Kennzeichnung eingereihter Bücher, Leerzustände.
+- Buchkarten mit Cover-Platzhalter und Überlaufmenü; Auswahlmodus mit kontextueller
+  Titelleiste. Statusmeldungen als farbige, von TalkBack angesagte Banner.
+- Entfernen, Verkauft-Markieren, Zurückholen, Bearbeiten und Prüfstart fangen
+  Datenbankfehler ab. Rückgängig per Snackbar für Entfernen und Verkauft-Markieren.
+- Filter/Sortierung/Summen in `domain/BookListQuery.kt` mit JVM-Tests; Karten und
+  Dialoge in `BookCards.kt`. Kein Schemawechsel.
+- Offen: Gerätetests und Sichtprüfung auf dem Smartphone, Großschrift/TalkBack-Abnahme,
+  weitere Aufteilung von `MainActivity` (Regal- und Trefferansicht).
+
 ## Externe Voraussetzungen
 - Der bisherige Momox-Zugang ist nicht als öffentliche Schnittstelle zugesichert.
   Ein offizieller Zugang muss mit dem Anbieter geklärt werden. Die FAQ erwähnt

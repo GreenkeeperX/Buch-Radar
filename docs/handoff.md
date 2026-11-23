@@ -38,6 +38,10 @@ Schließen werden nur die eigenen CameraX-Anwendungsfälle freigegeben.
 Der Bildbenchmark umfasst neun Varianten von drei Fotos; er ersetzt keinen
 Langlauf- oder allgemeinen Erkennungsnachweis.
 
+Nach 0.14.0 (Branch/PR, noch ohne Release): überarbeitete Oberfläche, abgesicherte
+Listenaktionen mit Rückgängig und ausgelagerte Listenlogik; siehe
+`implementation-status.md`. Gerätetests dafür stehen noch aus.
+
 ## Nächste konkrete Arbeit
 
 1. Die noch offenen Review-Bereiche mit Codebelegen und Abnahmekriterien abgleichen.
