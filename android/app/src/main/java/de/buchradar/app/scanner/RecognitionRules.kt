@@ -88,7 +88,8 @@ internal fun cleanSpineText(text: String): String {
             if (previous != null) {
                 val a = compact(previous); val b = compact(word)
                 if (a.isNotEmpty() && a == b) continue
-                if (similar(a, b)) { if (b.length > a.length) kept[kept.lastIndex] = word; continue }
+                // Numbers (ISBNs, volumes) differing in one digit are different readings, not stutter.
+                if (a.none(Char::isDigit) && b.none(Char::isDigit) && similar(a, b)) { if (b.length > a.length) kept[kept.lastIndex] = word; continue }
             }
             kept += word
         }

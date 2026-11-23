@@ -38,5 +38,6 @@ class RecognitionTest {
             cleanSpineText("Georg Christoph Lichtenberg\nWagnis der Aufklärung"))
         assertEquals("Band 1\nBand 2", cleanSpineText("Band 1\nBand 2"))
         assertEquals("Band 1\nBand 12", cleanSpineText("Band 1\nBand 12"))
+        assertEquals("ISBN 3125171547 3123171547", cleanSpineText("ISBN 3125171547 3123171547"))
     }
 }
