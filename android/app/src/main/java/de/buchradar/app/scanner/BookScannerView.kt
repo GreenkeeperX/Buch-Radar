@@ -174,7 +174,7 @@ fun BookScannerView(
                         val width = if (proxy.imageInfo.rotationDegrees % 180 == 0) proxy.width else proxy.height
                         val height = if (proxy.imageInfo.rotationDegrees % 180 == 0) proxy.height else proxy.width
                         val sample = imageSample(image)
-                        val difference = previousSample?.let { old -> old.indices.sumOf { abs(old[it] - sample[it]) }.toDouble() / old.size } ?: 255.0
+                        val difference = previousSample?.let { old -> frameDifference(old, sample) } ?: 255.0
                         previousSample = sample
                         if (difference >= STEADY_DIFFERENCE) rotatedPieces = emptyList()
                         if (sampleCount % 3 == 0 && (actualMode == ScannerMode.SHELF || actualMode == ScannerMode.AUTOMATIC || recognized.text.length < 12)) {
@@ -353,6 +353,15 @@ private suspend fun captureStill(context: android.content.Context, capture: Imag
  * for a hand-held phone (and for screens, which flicker); 12 still rejects real movement.
  */
 private const val STEADY_DIFFERENCE = 12
+
+/**
+ * Mean per-sample change after removing the overall brightness shift, so exposure changes and
+ * screen flicker do not count as movement; shifting content still does.
+ */
+internal fun frameDifference(old: IntArray, new: IntArray): Double {
+    val shift = (new.sum() - old.sum()).toDouble() / old.size
+    return old.indices.sumOf { abs(new[it] - old[it] - shift) } / old.size
+}
 
 private fun wordOverlap(a: String, b: String): Float {
     if (a.isBlank() || b.isBlank()) return 0f

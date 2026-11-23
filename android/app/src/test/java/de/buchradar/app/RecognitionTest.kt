@@ -31,6 +31,13 @@ class RecognitionTest {
         assertFalse(strictReady)
         assertTrue(shelfReady)
     }
+    @Test fun brightnessFlickerIsNotMovement() {
+        val base = IntArray(4096) { (it * 37) % 200 }
+        val brighter = IntArray(4096) { base[it] + 20 }
+        val shifted = IntArray(4096) { base[(it + 1) % 4096] }
+        assertTrue(frameDifference(base, brighter) < 1.0)
+        assertTrue(frameDifference(base, shifted) > 12.0)
+    }
     @Test fun adjacentSpinesStaySeparateAndIdenticalNamesAreNotDeduplicated() {
         val pieces = listOf(
             OcrPiece("Hugo", 10f, 10f, 30f, 50f, 90f),
