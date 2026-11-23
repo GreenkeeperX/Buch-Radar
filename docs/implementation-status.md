@@ -145,6 +145,17 @@ nach Messung an freigegebenen Scanbeispielen als bestätigt.
   keine verbesserte Frakturlesung behauptet. Gemessene Resultate unter
   `tools/recognition/`; Einzelfoto-Verbesserungen sind kein Nachweis für alle Regale.
 
+## Geräteprüfung 0.14.0
+- 41 JVM-Tests sowie Android-Build und Lint erfolgreich.
+- Alle 13 regulären Gerätetests bestanden, einschließlich zweifachem Öffnen,
+  Analysieren und Schließen der echten Kamera. Keine Testbilder gespeichert und
+  keine Bücher durch den Kameratest eingefügt.
+- CameraX-Vorschau, Bindung und Freigabe laufen ausdrücklich auf dem Hauptthread.
+  Eine verzögerte Freigabe entfernt nur die eigenen Kamera-Anwendungsfälle, nicht
+  die Bindung eines inzwischen neu geöffneten Scanners.
+- Langlauf, Drehung während laufender OCR und allgemeine Erkennungsqualität bleiben
+  weitere Abnahmen.
+
 ## Externe Voraussetzungen
 - Der bisherige Momox-Zugang ist nicht als öffentliche Schnittstelle zugesichert.
   Ein offizieller Zugang muss mit dem Anbieter geklärt werden. Die FAQ erwähnt

@@ -22,13 +22,21 @@ Sicherung und die Scroll-Absturzkorrektur nach Barcode-Scans.
 sichtbare Metadatenkonflikte. ISBN-Treffer mit widersprüchlichem Titel/Autor werden
 nicht ungefragt hinzugefügt. Vollständiger Bereichsabgleich: `review-checklist.md`.
 
-Verifiziert: 38 JVM-Tests, zwölf isolierte Gerätetests, fünf Backend-Vertragstests;
-Build und Lint erfolgreich. Gerät mit 0.13.0 aktualisiert.
+Vorheriger Prüfstand 0.13.0: 38 JVM-Tests, zwölf isolierte Gerätetests, fünf
+Backend-Vertragstests; Build und Lint erfolgreich.
 
 0.14.0: Bildregionen vor der Regal-OCR trennen, begrenzt entzerren und in kleinen
 Rastern lesen. Benchmark/Downloadskript und ursprüngliche Baseline stehen unter
 `tools/recognition/`. Öffentliche Fotos werden separat geladen, nicht mit der App
 ausgeliefert. Weitere ungesehene Fotos und echtes Kameraverhalten weiter prüfen.
+
+Geräteprüfung 0.14.0: alle 13 regulären Tests bestanden, einschließlich Kamera
+öffnen, analysieren, schließen und erneut öffnen. Das Gerät hat Version 0.14.0.
+Die Kameraoperationen laufen ausdrücklich auf dem Android-Hauptthread; beim
+Schließen werden nur die eigenen CameraX-Anwendungsfälle freigegeben.
+41 JVM-Tests, Android-Build und Lint ebenfalls erfolgreich.
+Der Bildbenchmark umfasst neun Varianten von drei Fotos; er ersetzt keinen
+Langlauf- oder allgemeinen Erkennungsnachweis.
 
 ## Nächste konkrete Arbeit
 
