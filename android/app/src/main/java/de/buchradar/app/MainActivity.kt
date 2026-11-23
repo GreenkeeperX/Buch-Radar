@@ -203,7 +203,12 @@ class MainActivity : ComponentActivity() {
                     ActivityResultContracts.RequestPermission()
                 ) { granted ->
                     if (granted) scannerOpen = true
-                    else message = "Für den Scanner wird Kamerazugriff benötigt. Du kannst ISBN oder Titel auch eintippen."
+                    else {
+                        message = "Für den Scanner wird Kamerazugriff benötigt. Du kannst ISBN oder Titel auch eintippen."
+                        // The shelf review was paused for the scanner; without camera it continues.
+                        shelfCorrectionQuery = null
+                        if (shelfReviewOpen) session.shelfReview.resume()
+                    }
                 }
                 val openScanner: (ScannerMode) -> Unit = { mode ->
                     keyboard?.hide()
@@ -211,13 +216,21 @@ class MainActivity : ComponentActivity() {
                     if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) scannerOpen = true
                     else cameraPermissionRequest.launch(Manifest.permission.CAMERA)
                 }
-                val showUndo: (String, suspend () -> Unit) -> Unit = { text, undo ->
-                    uiScope.launch {
-                        snackbar.currentSnackbarData?.dismiss()
-                        val result = snackbar.showSnackbar(text, actionLabel = "Rückgängig", withDismissAction = true, duration = SnackbarDuration.Long)
-                        if (result == SnackbarResult.ActionPerformed) scope.launch {
-                            if (catchingOperation { undo() }.isFailure) message = "Rückgängig machen fehlgeschlagen."
+                // Pending undo lives in the ViewModel, so a rotation keeps both the data and the action.
+                val pendingUndo = session.pendingUndo.value
+                LaunchedEffect(pendingUndo) {
+                    val undo = pendingUndo ?: return@LaunchedEffect
+                    snackbar.currentSnackbarData?.dismiss()
+                    val result = snackbar.showSnackbar(undo.text, actionLabel = "Rückgängig", withDismissAction = true, duration = SnackbarDuration.Long)
+                    if (session.pendingUndo.value === undo) session.pendingUndo.value = null
+                    if (result == SnackbarResult.ActionPerformed) scope.launch {
+                        val outcome = catchingOperation {
+                            undo.deleted?.let { book ->
+                                if (dao.insert(book) == -1L) message = "Nicht wiederhergestellt: Diese ISBN ist inzwischen wieder in der Liste."
+                            }
+                            if (undo.soldIds.isNotEmpty()) dao.updateSoldStatus(undo.soldIds, null)
                         }
+                        if (outcome.isFailure) message = "Rückgängig machen fehlgeschlagen."
                     }
                 }
                 val submitInput: (String, Bitmap?) -> Unit = { rawInput, frame ->
@@ -315,18 +328,19 @@ class MainActivity : ComponentActivity() {
                     scope.launch {
                         val marked = catchingOperation { dao.updateSoldStatus(ids, System.currentTimeMillis()) }
                         if (marked.isFailure) message = "Markieren fehlgeschlagen. Bitte erneut versuchen."
-                        else showUndo(if (ids.size == 1) "Als verkauft markiert" else "${ids.size} Bücher als verkauft markiert") { dao.updateSoldStatus(ids, null) }
+                        else session.pendingUndo.value = PendingUndo(if (ids.size == 1) "Als verkauft markiert" else "${ids.size} Bücher als verkauft markiert", soldIds = ids)
                     }
                 }
                 val deleteBook: (BookEntity) -> Unit = { book ->
                     scope.launch {
-                        if (catchingOperation { dao.deleteBook(book.id) }.isFailure) {
-                            message = "Entfernen fehlgeschlagen. Bitte erneut versuchen."
-                            return@launch
-                        }
-                        // The check history stays keyed by ISBN, so undo restores the full book.
-                        showUndo(book.title?.let { "„$it“ entfernt" } ?: "Buch entfernt") {
-                            if (dao.insert(book) == -1L) message = "Nicht wiederhergestellt: Diese ISBN ist inzwischen wieder in der Liste."
+                        // Undo restores the row as it was deleted, including a check finished meanwhile.
+                        val deleted = catchingOperation { dao.deleteBook(book.id) }
+                        val row = deleted.getOrNull()
+                        when {
+                            deleted.isFailure -> message = "Entfernen fehlgeschlagen. Bitte erneut versuchen."
+                            row == null -> message = "Dieses Buch war bereits entfernt."
+                            // The check history stays keyed by ISBN, so undo restores the full book.
+                            else -> session.pendingUndo.value = PendingUndo(row.title?.let { "„$it“ entfernt" } ?: "Buch entfernt", deleted = row)
                         }
                     }
                 }
@@ -720,7 +734,8 @@ class MainActivity : ComponentActivity() {
                             item(key = LIST_HEADER_KEY) {
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     if (books.isNotEmpty() || showSoldBooks) ListOverview(if (showSoldBooks) "Verkaufte Bücher" else "Meine Bücher", totals, showValue = !showSoldBooks)
-                                    if (!showSoldBooks && books.isNotEmpty()) {
+                                    // Progress and controls follow the run, even if no active book is left.
+                                    if (!showSoldBooks && (books.isNotEmpty() || isCheckingMomox || momoxSummary != null)) {
                                         if (isCheckingMomox) Card(colors = CardDefaults.cardColors(containerColor = colorScheme.secondaryContainer), modifier = Modifier.fillMaxWidth()) {
                                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                                 Text("Momox-Prüfung · $momoxProgress von $momoxTotal", style = MaterialTheme.typography.titleMedium)
@@ -731,7 +746,7 @@ class MainActivity : ComponentActivity() {
                                                     TextButton(onClick = { scope.launch { catchingOperation { MomoxCheckCoordinator.cancel(context) } } }) { Text("Prüfung beenden") }
                                                 }
                                             }
-                                        } else if (!selectionMode) FilledTonalButton(onClick = { momoxCheckDialogOpen = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                                        } else if (!selectionMode && books.isNotEmpty()) FilledTonalButton(onClick = { momoxCheckDialogOpen = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                                             Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
                                             Text("Momox-Preise prüfen", style = MaterialTheme.typography.titleMedium)
                                         }
@@ -763,7 +778,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
                             }
-                            if (visibleBooks.isEmpty()) item(key = "empty") {
+                            if (visibleBooks.isEmpty()) item(key = "static:empty") {
                                 val noBooksYet = if (showSoldBooks) soldBooks.isEmpty() else books.isEmpty()
                                 EmptyState(
                                     title = when {
@@ -782,7 +797,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                 )
                             } else {
-                                items(visibleBooks, key = { it.id }) { book ->
+                                items(visibleBooks, key = { "book:${it.id}" }) { book ->
                                     BookCard(
                                         book = book,
                                         selectionMode = selectionMode,
@@ -903,7 +918,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private const val LIST_HEADER_KEY = "list-header"
+private const val LIST_HEADER_KEY = "static:list-header"
 
 @androidx.compose.runtime.Composable
 private fun EmptyState(title: String, text: String, action: Pair<String, () -> Unit>?) {

@@ -72,10 +72,10 @@ interface BookDao {
     @Query("SELECT COUNT(*) FROM books WHERE isbn = :isbn")
     suspend fun countWithIsbn(isbn: String): Int
 
-    /** Removes a book and its queued Momox check, so a running check skips it cleanly. */
+    /** Removes a book and its queued Momox check; returns the row as it was deleted. */
     @Transaction
-    suspend fun deleteBook(id: String) {
-        val book = findById(id) ?: return
+    suspend fun deleteBook(id: String): BookEntity? {
+        val book = findById(id) ?: return null
         deleteById(id)
         if (book.isbn.isNotBlank() && countWithIsbn(book.isbn) == 0 && pendingFor(book.isbn) != null) {
             removePending(book.isbn)
@@ -88,6 +88,7 @@ interface BookDao {
                 ))
             }
         }
+        return book
     }
 
     @Query("""UPDATE books SET

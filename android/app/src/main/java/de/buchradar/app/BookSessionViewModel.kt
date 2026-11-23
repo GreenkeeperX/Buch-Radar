@@ -42,6 +42,7 @@ class BookSessionViewModel(application: Application) : AndroidViewModel(applicat
     val summaryExpanded = mutableStateOf(false)
     val dismissedSummaryRun = mutableStateOf<Long?>(null)
     val deletingBook = mutableStateOf<BookEntity?>(null)
+    val pendingUndo = mutableStateOf<PendingUndo?>(null)
     val settingsOpen = mutableStateOf(false)
     val showSoldBooks = mutableStateOf(false)
     val selectionMode = mutableStateOf(false)
@@ -52,3 +53,6 @@ class BookSessionViewModel(application: Application) : AndroidViewModel(applicat
     val momoxCheckDialogOpen = mutableStateOf(false)
     val momoxCheckMode = mutableStateOf("stale")
 }
+
+/** An action the snackbar can still undo: a removed book row or books marked as sold. */
+class PendingUndo(val text: String, val deleted: BookEntity? = null, val soldIds: List<String> = emptyList())

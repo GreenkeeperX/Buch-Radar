@@ -69,13 +69,17 @@ object MomoxCheckCoordinator {
             val error = result.exceptionOrNull()
             val failure = error as? MomoxCheckException
             if (error != null && failure?.pauseQueue == true) {
-                db.withTransaction {
-                    if (dao.pendingFor(item.isbn)?.requestId == item.requestId) {
+                val current = db.withTransaction {
+                    val stillQueued = dao.pendingFor(item.isbn)?.requestId == item.requestId
+                    if (stillQueued) {
                         dao.getRun()?.takeIf { it.finishedAt == null }?.let {
                             dao.saveRun(it.copy(pausedReason = error.message ?: "Zugriff prüfen"))
                         }
                     }
+                    stillQueued
                 }
+                // A late answer for a removed or replaced task must not stall the remaining queue.
+                if (!current) continue
                 AppLog.add(context, "Momox-Prüfung pausiert: ${error.message}")
                 return@withLock false
             }

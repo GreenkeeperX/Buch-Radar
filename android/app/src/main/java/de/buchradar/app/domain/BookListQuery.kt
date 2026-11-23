@@ -95,6 +95,8 @@ data class BookListTotals(
 object BookInputFormat {
     /** Accepts ISBN-10/13 with or without hyphens and spaces. */
     fun parseIsbn(value: String): ISBN? {
+        // Multi-line text (OCR) goes through BookIdentity.isbnsInText, which never joins lines.
+        if (value.trim().any { it == '\n' || it == '\r' }) return null
         val compact = value.trim().filterNot { it == '-' || it.isWhitespace() }
         if (compact.isEmpty()) return null
         return catchingOperation { ISBN.valueOf(compact) }.getOrNull()

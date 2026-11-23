@@ -95,13 +95,18 @@ internal fun cleanSpineText(text: String): String {
         }
         kept.joinToString(" ")
     }.filter { compact(it).isNotEmpty() }
+    fun words(value: String) = foldOcr(value).split(' ').filter(String::isNotBlank)
     val result = lines.filterIndexed { index, line ->
         val key = compact(line)
+        val lineWords = words(line)
         lines.withIndex().none { (other, candidate) ->
             if (other == index) return@none false
             val otherKey = compact(candidate)
+            val otherWords = words(candidate)
+            // Repeated whole words ("Hedin" in "Sven Hedin"), not substrings ("IT" in "Illustrated").
+            val contained = lineWords.size < otherWords.size && otherWords.windowed(lineWords.size).any { it == lineWords }
             // Lines with digits (volume numbers, years) are never treated as redundant.
-            val redundant = key.none(Char::isDigit) && otherKey.length > key.length && (otherKey.contains(key) || similar(key, otherKey))
+            val redundant = key.none(Char::isDigit) && otherKey.length > key.length && (contained || similar(key, otherKey))
             // Identical lines: keep only the first occurrence.
             redundant || otherKey == key && other < index
         }

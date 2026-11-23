@@ -87,6 +87,8 @@ class BookListQueryTest {
         assertNull(BookInputFormat.parseIsbn("9780804429574"))
         assertNull(BookInputFormat.parseIsbn(""))
         assertNull(BookInputFormat.parseIsbn("Der Process"))
+        // Line breaks are never joined into an ISBN (OCR text uses isbnsInText instead).
+        assertNull(BookInputFormat.parseIsbn("9780140\n328721"))
     }
 
     @Test fun isbn13WithValidIsbn10PrefixParsesAsItself() {
