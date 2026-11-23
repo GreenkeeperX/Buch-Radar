@@ -22,7 +22,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.shape.RoundedCornerShape
+import android.content.res.Configuration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -79,18 +83,24 @@ fun BookScannerView(
     Box(modifier.fillMaxSize().background(Color.Black)) {
         AndroidView(factory = { preview }, modifier = Modifier.fillMaxSize())
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(12.dp), verticalArrangement = Arrangement.SpaceBetween) {
-            Row(Modifier.fillMaxWidth().background(Color.Black.copy(alpha = .75f)), horizontalArrangement = Arrangement.SpaceBetween) {
-                TextButton(onClick = onClose) { Text("Schließen", color = Color.White) }
-                Box {
+            // Compact controls: in landscape full-width bars covered much of the camera image.
+            val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+            val chip = Modifier.background(Color.Black.copy(alpha = .7f), RoundedCornerShape(20.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                TextButton(onClick = onClose, modifier = chip) { Text("Schließen", color = Color.White) }
+                Box(chip) {
                     TextButton(onClick = { menu = true }, enabled = !finalizing) { Text("${when(mode) { ScannerMode.AUTOMATIC -> "Auto"; ScannerMode.SINGLE_BOOK -> "Einzelbuch"; ScannerMode.SHELF -> "Regal"; ScannerMode.COVER_TEST -> "Cover-Test" }} ▾", color = Color.White) }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                         ScannerMode.entries.forEach { choice -> DropdownMenuItem(text = { Text(when(choice) { ScannerMode.AUTOMATIC -> "Automatisch"; ScannerMode.SINGLE_BOOK -> "Einzelbuch"; ScannerMode.SHELF -> "Regal"; ScannerMode.COVER_TEST -> "Cover-Test (experimentell)" }) }, onClick = { mode = choice; menu = false }) }
                     }
                 }
             }
-            Column(Modifier.fillMaxWidth().background(Color.Black.copy(alpha = .8f)).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.align(Alignment.CenterHorizontally).widthIn(max = 560.dp).fillMaxWidth()
+                .background(Color.Black.copy(alpha = .75f), RoundedCornerShape(16.dp)).padding(horizontal = 12.dp, vertical = if (landscape) 8.dp else 12.dp),
+                verticalArrangement = Arrangement.spacedBy(if (landscape) 4.dp else 8.dp)) {
                 Text(hint, color = Color.White, style = MaterialTheme.typography.titleMedium)
-                if (observed.isNotBlank()) Text(observed, color = Color.White, maxLines = 3, style = MaterialTheme.typography.bodyLarge)
+                if (observed.isNotBlank()) Text(observed, color = Color.White, maxLines = if (landscape) 1 else 3,
+                    overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
                 Button(onClick = confirm, enabled = !finalizing && observed.isNotBlank() && frame != null, modifier = Modifier.fillMaxWidth()) {
                     Text(if (finalizing) "Buchrücken werden gelesen …" else if (shelf) "Buchrücken jetzt lesen" else "Jetzt suchen")
                 }
@@ -166,7 +176,7 @@ fun BookScannerView(
                         val sample = imageSample(image)
                         val difference = previousSample?.let { old -> old.indices.sumOf { abs(old[it] - sample[it]) }.toDouble() / old.size } ?: 255.0
                         previousSample = sample
-                        if (difference >= 8) rotatedPieces = emptyList()
+                        if (difference >= STEADY_DIFFERENCE) rotatedPieces = emptyList()
                         if (sampleCount % 3 == 0 && (actualMode == ScannerMode.SHELF || actualMode == ScannerMode.AUTOMATIC || recognized.text.length < 12)) {
                             val extra = mutableListOf<OcrPiece>()
                             for (degrees in listOf(90, 270)) {
@@ -190,9 +200,14 @@ fun BookScannerView(
                         val text = if (isShelf) found.joinToString("\n") else found.joinToString("\n").take(2_000)
                         val edges = sample.indices.filter { it % 64 in 1..62 && it / 64 in 1..62 }
                             .map { abs(4 * sample[it] - sample[it-1] - sample[it+1] - sample[it-64] - sample[it+64]) }.average()
-                        val ready = stability.observe(text, lastAt, difference < 8, edges > 2.0)
+                        // Shelf texts of many spines vary slightly between frames; require less overlap there.
+                        stability.minSimilarity = if (isShelf) .70f else .90f
+                        val steady = difference < STEADY_DIFFERENCE
+                        val ready = stability.observe(text, lastAt, steady, edges > 2.0)
                         val currentKey = foldOcr(text)
-                        if (currentKey == publishKey) publishCount++ else { publishKey = currentKey; publishCount = 1 }
+                        // Show (and allow manual reading of) text once two frames roughly agree.
+                        if (currentKey == publishKey || isShelf && wordOverlap(currentKey, publishKey) >= .5f) publishCount++ else publishCount = 1
+                        publishKey = currentKey
                         val shouldPublish = text.isNotBlank() && publishCount >= 2
                         sampleCount++
                         if (sampleCount % 10 == 0) AppLog.add(context, "Kamera: ${width}×$height, ${groups.size} Textregionen, Bewegung=${difference.toInt()}, Konturen=${edges.toInt()}")
@@ -211,7 +226,7 @@ fun BookScannerView(
                             hint = when {
                                 text.isBlank() -> "Näher heran – noch kein lesbarer Text"
                                 edges <= 2.0 -> "Text noch unscharf – bitte neu ausrichten"
-                                difference >= 8 -> "Noch ruhig halten"
+                                !steady -> "Noch ruhig halten"
                                 isShelf -> "${found.size} Buchrücken – ruhig halten"
                                 actualMode == ScannerMode.COVER_TEST -> "Cover-Test: Text liefert Kandidaten"
                                 else -> "Text erkannt – Suche startet bei ruhigem Bild"
@@ -331,6 +346,18 @@ private suspend fun captureStill(context: android.content.Context, capture: Imag
         AppLog.add(context, "Regal-Foto nicht lesbar (${error.javaClass.simpleName})")
         null
     } finally { proxy.close() }
+}
+
+/**
+ * Mean brightness change per sample (0–255) still counted as a steady image. 8 was too strict
+ * for a hand-held phone (and for screens, which flicker); 12 still rejects real movement.
+ */
+private const val STEADY_DIFFERENCE = 12
+
+private fun wordOverlap(a: String, b: String): Float {
+    if (a.isBlank() || b.isBlank()) return 0f
+    val x = a.split(' ').toSet(); val y = b.split(' ').toSet()
+    return x.intersect(y).size.toFloat() / x.union(y).size
 }
 
 /** Keep ImageProxy alive until ML Kit is finished, even when the screen closes. */

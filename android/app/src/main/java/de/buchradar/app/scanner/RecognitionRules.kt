@@ -14,6 +14,8 @@ internal class RecognitionStability {
     private var since = 0L
     private var count = 0
     private var lastSeen = 0L
+    /** Word overlap needed between frames; shelves with many spines use a lower value. */
+    var minSimilarity = .90f
     fun reset() { anchor = ""; previous = ""; since = 0; count = 0 }
     fun observe(text: String, now: Long, imageSteady: Boolean, readable: Boolean): Boolean {
         val key = foldOcr(text)
@@ -22,7 +24,7 @@ internal class RecognitionStability {
             return false
         }
         lastSeen = now
-        if (!imageSteady || !readable || similarity(anchor, key) < .90f || similarity(previous, key) < .90f) {
+        if (!imageSteady || !readable || similarity(anchor, key) < minSimilarity || similarity(previous, key) < minSimilarity) {
             anchor = key; count = 1; since = now
         } else count++
         previous = key

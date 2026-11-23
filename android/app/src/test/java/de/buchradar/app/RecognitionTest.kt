@@ -19,6 +19,18 @@ class RecognitionTest {
         repeat(5) { rule.observe("Victor Hugo Notre Dame", it * 500L, true, true) }
         assertFalse(rule.observe("Thomas Mann Zauberberg", 2500, true, true))
     }
+    @Test fun shelfToleranceAcceptsSmallOcrVariation() {
+        val strict = RecognitionStability()
+        val shelf = RecognitionStability().apply { minSimilarity = .70f }
+        val frames = listOf("Hugo Notre Dame Mann Zauberberg Fontane", "Hugo Notre Dame Mann Zauberberg Fontano")
+        var strictReady = false; var shelfReady = false
+        repeat(6) { i ->
+            strictReady = strict.observe(frames[i % 2], i * 500L, true, true) || strictReady
+            shelfReady = shelf.observe(frames[i % 2], i * 500L, true, true) || shelfReady
+        }
+        assertFalse(strictReady)
+        assertTrue(shelfReady)
+    }
     @Test fun adjacentSpinesStaySeparateAndIdenticalNamesAreNotDeduplicated() {
         val pieces = listOf(
             OcrPiece("Hugo", 10f, 10f, 30f, 50f, 90f),
