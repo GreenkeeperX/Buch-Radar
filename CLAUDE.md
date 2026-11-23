@@ -21,6 +21,7 @@ MOMOX_API_TOKEN= ./gradlew testDebugUnitTest lintDebug assembleDebug
 ./gradlew connectedDeviceTestAndroidTest
 ```
 
+Ablauf für Arbeit am echten Gerät: Skill `.claude/skills/buchradar-geraetetest`.
 Gerätetests laufen als eigene App `de.buchradar.app.devicetest` (Build-Typ
 `deviceTest`), weil der Test-Runner die getestete App danach deinstalliert. Niemals
 Gerätetests gegen `de.buchradar.app` ausführen, niemals `connectedDebugAndroidTest`
