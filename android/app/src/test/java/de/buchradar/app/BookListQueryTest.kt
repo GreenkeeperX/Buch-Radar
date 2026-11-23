@@ -27,17 +27,18 @@ class BookListQueryTest {
 
     @Test fun statusFiltersUseStoredState() {
         val books = listOf(
-            book("offer", "A", "AVAILABLE", 250, checked = 1),
-            book("none", "B", "NOT_AVAILABLE", checked = 1),
-            book("new", "C"),
-            book("failed", "D", "AVAILABLE", 100, checked = 1, attempt = "ERROR")
+            book("offer", "A", "AVAILABLE", 250, checked = 1, isbn = "1"),
+            book("none", "B", "NOT_AVAILABLE", checked = 1, isbn = "2"),
+            book("new", "C", isbn = "3"),
+            book("manual", "E"),
+            book("failed", "D", "AVAILABLE", 100, checked = 1, attempt = "ERROR", isbn = "4")
         )
         fun ids(filter: String) = BookListQuery.apply(books, "", filter, "title_up", false).map { it.id }
         assertEquals(listOf("offer", "failed"), ids("available"))
         assertEquals(listOf("none"), ids("unavailable"))
         assertEquals(listOf("new"), ids("unchecked"))
         assertEquals(listOf("failed"), ids("error"))
-        assertEquals(4, ids("all").size)
+        assertEquals(5, ids("all").size)
     }
 
     @Test fun titleSortUsesGermanCollationAndPutsUntitledLast() {
@@ -53,6 +54,12 @@ class BookListQueryTest {
         )
         assertEquals(listOf("rich", "cheap", "none", "stale"), BookListQuery.apply(books, "", "all", "price_down", false).map { it.id })
         assertEquals(listOf("cheap", "rich", "none", "stale"), BookListQuery.apply(books, "", "all", "price_up", false).map { it.id })
+    }
+
+    @Test fun numbersInATextSearchDoNotMatchIsbnsAlone() {
+        val books = listOf(book("orwell", "1984", author = "George Orwell", isbn = "9780141036144"),
+            book("other", "Anderes", author = "Jemand", isbn = "9781984000000"))
+        assertEquals(listOf("orwell"), BookListQuery.apply(books, "1984 Orwell", "all", "recent", false).map { it.id })
     }
 
     @Test fun recentSortShowsNewestFirst() {
@@ -95,6 +102,7 @@ class BookListQueryTest {
         assertEquals(MessageTone.ERROR, messageTone("Buch konnte nicht gespeichert werden. Bitte erneut versuchen."))
         assertEquals(MessageTone.ERROR, messageTone("Katalog nicht erreichbar. ISBN gespeichert; Titel und Autor kannst du ergänzen."))
         assertEquals(MessageTone.SUCCESS, messageTone("Hinzugefügt: Der Process"))
+        assertEquals(MessageTone.SUCCESS, messageTone("Hinzugefügt: Fehler im System"))
         assertEquals(MessageTone.PROGRESS, messageTone("Suche Titel und Buchdaten …"))
         assertEquals(MessageTone.INFO, messageTone("Dieses Buch ist bereits in deiner Liste."))
     }

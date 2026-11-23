@@ -41,6 +41,7 @@ class BookSessionViewModel(application: Application) : AndroidViewModel(applicat
     val momoxSummary = mutableStateOf<MomoxSummary?>(null)
     val summaryExpanded = mutableStateOf(false)
     val dismissedSummaryRun = mutableStateOf<Long?>(null)
+    val deletingBook = mutableStateOf<BookEntity?>(null)
     val settingsOpen = mutableStateOf(false)
     val showSoldBooks = mutableStateOf(false)
     val selectionMode = mutableStateOf(false)

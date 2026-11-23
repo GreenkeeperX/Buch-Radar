@@ -168,6 +168,7 @@ class MainActivity : ComponentActivity() {
                 var detailsBook by session.detailsBook
                 var manualEntry by session.manualEntry
                 var editingBook by session.editingBook
+                var deletingBook by session.deletingBook
                 var scannerOpen by session.scannerOpen
                 var coverFrame by session.coverFrame
                 var visualCoverTest by session.visualCoverTest
@@ -319,12 +320,14 @@ class MainActivity : ComponentActivity() {
                 }
                 val deleteBook: (BookEntity) -> Unit = { book ->
                     scope.launch {
-                        if (catchingOperation { dao.deleteById(book.id) }.isFailure) {
+                        if (catchingOperation { dao.deleteBook(book.id) }.isFailure) {
                             message = "Entfernen fehlgeschlagen. Bitte erneut versuchen."
                             return@launch
                         }
                         // The check history stays keyed by ISBN, so undo restores the full book.
-                        showUndo(book.title?.let { "„$it“ entfernt" } ?: "Buch entfernt") { dao.insert(book) }
+                        showUndo(book.title?.let { "„$it“ entfernt" } ?: "Buch entfernt") {
+                            if (dao.insert(book) == -1L) message = "Nicht wiederhergestellt: Diese ISBN ist inzwischen wieder in der Liste."
+                        }
                     }
                 }
                 LaunchedEffect(checkRun) {
@@ -357,7 +360,9 @@ class MainActivity : ComponentActivity() {
                     coverCandidates = emptyList(); coverFrame = null; visualCoverTest = false
                 }
                 val visibleBooks = remember(books, soldBooks, showSoldBooks, statusFilter, sortMode, searchInput) {
-                    BookListQuery.apply(if (showSoldBooks) soldBooks else books, searchInput, statusFilter, sortMode, showSoldBooks)
+                    // Status chips exist only for active books; a filter chosen there must not hide sold books.
+                    BookListQuery.apply(if (showSoldBooks) soldBooks else books, searchInput,
+                        if (showSoldBooks) BookListQuery.FILTER_ALL else statusFilter, sortMode, showSoldBooks)
                 }
                 val totals = remember(books, soldBooks, showSoldBooks) { BookListQuery.totals(if (showSoldBooks) soldBooks else books) }
                 val visibleIds = visibleBooks.map { it.id }.toSet()
@@ -791,7 +796,7 @@ class MainActivity : ComponentActivity() {
                                         onRestore = { restoreSold(listOf(book.id)) },
                                         onOpen = { detailsBook = book },
                                         onEdit = { editingBook = book },
-                                        onDelete = { deleteBook(book) },
+                                        onDelete = { deletingBook = book },
                                         onMomoxCheck = { runMomoxCheck(listOf(book)) },
                                         onMarkSold = { markSold(listOf(book.id)) }
                                     )
@@ -830,6 +835,16 @@ class MainActivity : ComponentActivity() {
                     }) { Text("Prüfung starten") } },
                     dismissButton = { TextButton(onClick = { momoxCheckDialogOpen = false }) { Text("Abbrechen") } }
                 )
+
+                deletingBook?.let { book ->
+                    AlertDialog(
+                        onDismissRequest = { deletingBook = null },
+                        title = { Text("Buch entfernen?") },
+                        text = { Text("„${book.title ?: "Unbekannter Titel"}“ wird aus deiner Liste gelöscht. Direkt danach kannst du das noch rückgängig machen.") },
+                        confirmButton = { TextButton(onClick = { deletingBook = null; deleteBook(book) }) { Text("Entfernen", color = colorScheme.error) } },
+                        dismissButton = { TextButton(onClick = { deletingBook = null }) { Text("Abbrechen") } }
+                    )
+                }
 
                 if (discardShelfConfirm) AlertDialog(onDismissRequest = { discardShelfConfirm = false },
                     title = { Text("Offene Regal-Funde verwerfen?") },

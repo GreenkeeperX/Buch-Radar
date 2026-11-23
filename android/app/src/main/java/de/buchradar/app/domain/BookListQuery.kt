@@ -42,7 +42,7 @@ object BookListQuery {
     fun matchesStatus(book: BookEntity, filter: String): Boolean = when (filter) {
         FILTER_AVAILABLE -> book.momoxStatus == "AVAILABLE"
         FILTER_UNAVAILABLE -> book.momoxStatus == "NOT_AVAILABLE"
-        FILTER_UNCHECKED -> book.lastCheckedAt == null
+        FILTER_UNCHECKED -> book.isbn.isNotBlank() && book.lastCheckedAt == null
         FILTER_ERROR -> book.lastAttemptStatus == "ERROR" || book.momoxStatus == "ERROR"
         else -> true
     }
@@ -52,11 +52,13 @@ object BookListQuery {
 
     fun apply(books: List<BookEntity>, query: String, filter: String, sort: String, soldView: Boolean): List<BookEntity> {
         val terms = fold(query).split(' ').filter(String::isNotBlank)
+        // A purely numeric query (e.g. a typed ISBN with hyphens) may match the compact stored ISBN.
+        val isbnLikeQuery = query.isNotBlank() && query.all { it.isDigit() || it == 'x' || it == 'X' || it == '-' || it.isWhitespace() }
         val filtered = books.filter { book ->
             val haystack = fold("${book.title.orEmpty()} ${book.author.orEmpty()} ${book.isbn} ${book.publicationYear?.toString().orEmpty()}")
             // Also allow searching a formatted ISBN ("978-3-…") against the compact stored value.
             val compactQuery = query.filter { it.isDigit() || it == 'x' || it == 'X' }
-            val isbnHit = compactQuery.length >= 4 && book.isbn.contains(compactQuery, ignoreCase = true)
+            val isbnHit = isbnLikeQuery && compactQuery.length >= 4 && book.isbn.contains(compactQuery, ignoreCase = true)
             (terms.all(haystack::contains) || isbnHit) && matchesStatus(book, filter)
         }
         val collator = Collator.getInstance(Locale.GERMANY).apply { strength = Collator.SECONDARY }
@@ -114,6 +116,8 @@ enum class MessageTone { INFO, SUCCESS, ERROR, PROGRESS }
 fun messageTone(text: String): MessageTone {
     val lower = text.lowercase(Locale.GERMANY)
     return when {
+        // Fixed prefixes first: they are followed by catalog text (titles) that must not decide the tone.
+        text.startsWith("Hinzugefügt:") -> if (text.contains('\n')) MessageTone.INFO else MessageTone.SUCCESS
         text.trimEnd().endsWith("…") -> MessageTone.PROGRESS
         listOf("fehlgeschlagen", "nicht erreichbar", "nicht gespeichert", "konnte nicht", "fehler", "ungültig", "kein gültig", "benötigt").any(lower::contains) -> MessageTone.ERROR
         listOf("nicht gefunden", "bereits", "bitte", "prüfen").any(lower::contains) -> MessageTone.INFO

@@ -1,0 +1,11 @@
+<resources>
+    <!-- Window colours match the Compose theme so cold starts do not flash white. -->
+    <style name="Theme.BuchRadar" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+        <item name="android:statusBarColor">@color/window_background</item>
+        <item name="android:navigationBarColor">@color/window_background</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:colorAccent">@color/brand_primary</item>
+    </style>
+</resources>

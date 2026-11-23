@@ -69,6 +69,27 @@ interface BookDao {
     @Query("DELETE FROM books WHERE id = :id")
     suspend fun deleteById(id: String)
 
+    @Query("SELECT COUNT(*) FROM books WHERE isbn = :isbn")
+    suspend fun countWithIsbn(isbn: String): Int
+
+    /** Removes a book and its queued Momox check, so a running check skips it cleanly. */
+    @Transaction
+    suspend fun deleteBook(id: String) {
+        val book = findById(id) ?: return
+        deleteById(id)
+        if (book.isbn.isNotBlank() && countWithIsbn(book.isbn) == 0 && pendingFor(book.isbn) != null) {
+            removePending(book.isbn)
+            getRun()?.takeIf { it.finishedAt == null }?.let { run ->
+                val remaining = pendingCount()
+                saveRun(run.copy(
+                    total = (run.total - 1).coerceAtLeast(run.completed),
+                    pausedReason = if (remaining == 0) null else run.pausedReason,
+                    finishedAt = if (remaining == 0) System.currentTimeMillis() else null
+                ))
+            }
+        }
+    }
+
     @Query("""UPDATE books SET
         momoxStatus = CASE WHEN :status = 'ERROR' THEN momoxStatus ELSE :status END,
         currentPriceCents = CASE WHEN :status = 'ERROR' THEN currentPriceCents ELSE :price END,
