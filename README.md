@@ -72,7 +72,7 @@ ausdrücklich Testversionen. Zugangswerte dürfen nicht in öffentliche APKs gel
 
 ```sh
 ./gradlew testDebugUnitTest lintDebug
-./gradlew connectedDebugAndroidTest
+./gradlew connectedDeviceTestAndroidTest
 ```
 
 Optionaler lokaler Bildbenchmark: [Anleitung und öffentliche Bildquellen](tools/recognition/README.md).

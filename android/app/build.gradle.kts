@@ -23,6 +23,18 @@ android {
         buildConfigField("String", "MOMOX_API_TOKEN", "\"${momoxToken.replace("\\", "\\\\").replace("\"", "\\\"")}\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
+    buildTypes {
+        // Device tests run as a separate app id. The Android test runner uninstalls the
+        // tested app after `connected…AndroidTest`; it must never touch the real app
+        // `de.buchradar.app` and its local book list.
+        create("deviceTest") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".devicetest"
+            versionNameSuffix = "-devicetest"
+            matchingFallbacks += listOf("debug")
+        }
+    }
+    testBuildType = "deviceTest"
     buildFeatures { compose = true; buildConfig = true }
     testOptions { unitTests.isReturnDefaultValues = true }
     compileOptions {
@@ -54,6 +66,7 @@ dependencies {
     // Android 16 removed the reflective InputManager API used by older Espresso.
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+    "deviceTestImplementation"("androidx.compose.ui:ui-test-manifest")
     implementation("androidx.activity:activity-compose:1.10.0")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
