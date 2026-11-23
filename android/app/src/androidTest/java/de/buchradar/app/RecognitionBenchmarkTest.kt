@@ -8,6 +8,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import de.buchradar.app.domain.BookIdentity
 import de.buchradar.app.scanner.*
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
@@ -41,7 +42,7 @@ class RecognitionBenchmarkTest {
                 val original = requireNotNull(BitmapFactory.decodeFile(path, decode))
                 try {
                     val shelf = fixture.getString("mode") == "shelf"
-                    val sizes = if (shelf) listOf(1280, 1920, 2560) else listOf(1280)
+                    val sizes = if (shelf) listOf(1280, 1920, 2560) else listOf(1280, 1920)
                     val rotations = if (shelf) listOf(0) else listOf(0, 90, 270)
                     for (maxSize in sizes) for (rotation in rotations) {
                         val factor = minOf(1f, maxSize.toFloat() / maxOf(original.width, original.height))
@@ -52,8 +53,10 @@ class RecognitionBenchmarkTest {
                         try {
                             val started = SystemClock.elapsedRealtime()
                             val pieces = mutableListOf<OcrPiece>()
+                            val rawTexts = mutableListOf<String>()
                             for (degrees in listOf(0, 90, 270)) {
                                 val result = recognizer.process(InputImage.fromBitmap(image, degrees)).awaitCompletion()
+                                rawTexts += result.text
                                 val found = result.toPieces().map { if(degrees == 0) it else unrotatePiece(it, degrees, image.width, image.height) }
                                 for (piece in found) {
                                     if (pieces.none { old -> foldOcr(old.text) == foldOcr(piece.text) && abs(old.x - piece.x) < minOf(old.width, piece.width) * .5f && abs(old.y - piece.y) < minOf(old.height, piece.height) * .5f }) pieces += piece
@@ -66,6 +69,15 @@ class RecognitionBenchmarkTest {
                                 .put("elapsedMillis", SystemClock.elapsedRealtime() - started)
                                 .put("groups", groups.size).put("pieces", pieces.size)
                                 .put("expectedTokens", expected.size).put("recognizedTokens", expected.count { it in observed })
+                                .put("missingTokens", JSONArray(expected.filter { it !in observed }))
+                            // ISBNs exactly as the app extracts them, united over the 0/90/270 degree passes.
+                            val isbnsFound = rawTexts.flatMap { BookIdentity.isbnsInText(it) }.map(::isbn13).distinct()
+                            row.put("isbnsFound", JSONArray(isbnsFound))
+                            if (!shelf) row.put("rawText", JSONArray(rawTexts))
+                            if (fixture.optString("category") == "isbn") {
+                                val expectedIsbns = fixture.getJSONArray("expectedIsbns").strings().map(::isbn13)
+                                row.put("isbnExpected", expectedIsbns.size).put("isbnHits", expectedIsbns.count { it in isbnsFound })
+                            }
                             if (shelf) {
                                 val regions = fixture.getJSONArray("regions")
                                 fun regionOf(piece: OcrPiece): Int? = (0 until regions.length()).firstOrNull { n ->
@@ -123,4 +135,13 @@ class RecognitionBenchmarkTest {
     }
 
     private fun JSONArray.strings() = (0 until length()).map(::getString)
+
+    /** Compare ISBN-10 and ISBN-13 forms of the same edition. */
+    private fun isbn13(value: String): String {
+        val compact = value.filter { it.isDigit() || it == 'X' || it == 'x' }
+        if (compact.length != 10) return compact
+        val body = "978" + compact.take(9)
+        val check = (10 - body.mapIndexed { i, c -> (c - '0') * if (i % 2 == 0) 1 else 3 }.sum() % 10) % 10
+        return body + check
+    }
 }

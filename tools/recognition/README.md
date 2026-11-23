@@ -16,19 +16,22 @@ Der Programmcode steht separat unter GPL-3.0-only.
 
 ## Ausführung auf Android
 
-App und Testpaket aus demselben Commit bauen/installieren. Ein lokaler Ordner
-`cache/recognition-benchmark` der Debug-App enthält Manifest und Bilder. Keine
+App und Testpaket aus demselben Commit bauen/installieren
+(`./gradlew installDeviceTest installDeviceTestAndroidTest`). Getestet wird die
+eigene App `de.buchradar.app.devicetest`, nie die installierte Bücher-Radar-App.
+Ein lokaler Ordner `cache/recognition-benchmark` dieser App enthält Manifest und Bilder
+(alle Bilddateien aus dem Manifest kopieren). Keine
 echten Datenbanken ersetzen oder die App-Daten löschen. Beispielsweise:
 
 ```sh
 adb push /tmp/buchradar-public-fixtures /data/local/tmp/buchradar-public-fixtures
-adb shell run-as de.buchradar.app mkdir -p cache/recognition-benchmark
-adb shell run-as de.buchradar.app cp /data/local/tmp/buchradar-public-fixtures/manifest.json cache/recognition-benchmark/
-adb shell run-as de.buchradar.app cp /data/local/tmp/buchradar-public-fixtures/fontane-stechlin.jpg cache/recognition-benchmark/
-adb shell run-as de.buchradar.app cp /data/local/tmp/buchradar-public-fixtures/fontane-kinderjahre.jpg cache/recognition-benchmark/
-adb shell run-as de.buchradar.app cp /data/local/tmp/buchradar-public-fixtures/shelf-mixed-german.jpg cache/recognition-benchmark/
-adb shell am instrument -w -e class de.buchradar.app.RecognitionBenchmarkTest -e recognitionBenchmark true de.buchradar.app.test/androidx.test.runner.AndroidJUnitRunner
-adb exec-out run-as de.buchradar.app cat cache/recognition-benchmark/report.json > /tmp/recognition-report.json
+adb shell run-as de.buchradar.app.devicetest mkdir -p cache/recognition-benchmark
+adb shell run-as de.buchradar.app.devicetest cp /data/local/tmp/buchradar-public-fixtures/manifest.json cache/recognition-benchmark/
+adb shell run-as de.buchradar.app.devicetest cp /data/local/tmp/buchradar-public-fixtures/fontane-stechlin.jpg cache/recognition-benchmark/
+adb shell run-as de.buchradar.app.devicetest cp /data/local/tmp/buchradar-public-fixtures/fontane-kinderjahre.jpg cache/recognition-benchmark/
+adb shell run-as de.buchradar.app.devicetest cp /data/local/tmp/buchradar-public-fixtures/shelf-mixed-german.jpg cache/recognition-benchmark/
+adb shell am instrument -w -e class de.buchradar.app.RecognitionBenchmarkTest -e recognitionBenchmark true de.buchradar.app.devicetest.test/androidx.test.runner.AndroidJUnitRunner
+adb exec-out run-as de.buchradar.app.devicetest cat cache/recognition-benchmark/report.json > /tmp/recognition-report.json
 ```
 
 Ohne ausdrückliches Argument wird der Benchmark übersprungen. Er stellt keine
@@ -73,6 +76,23 @@ häufig; diese Zahlen sind keine bestätigten Buchidentifikationen oder Momox-Er
 Die historischen Fraktureinbände zeigen weiterhin deutliche Lesefehler. Die Messung
 belegt eine Verbesserung am Entwicklungsfoto, keinen allgemeinen Qualitätsnachweis.
 Laufzeiten schwanken, unter anderem durch Modellstart und Gerätelast.
+
+## ISBN-Fotos (Entwicklungsstand nach 0.14)
+
+Drei öffentliche Rückseiten-/Etikettfotos mit `category: "isbn"` und bestätigten
+`expectedIsbns`. Gewertet wird die Vereinigung von `BookIdentity.isbnsInText` über die
+OCR-Durchgänge 0°/90°/270°, also dieselbe Extraktion wie in der App
+(`isbnHits/isbnExpected`, dazu `isbnsFound` zum Erkennen von Falschtreffern).
+Gemessen auf einem Pixel 9a, 3 Bilder × 1280/1920 Pixel × 0°/90°/270°:
+
+| Stand | Gefundene Soll-ISBNs | Falschtreffer |
+|---|---:|---:|
+| vor der Trennzeichen-/Barcodezeilen-Toleranz | 14 von 18 Fällen | 0 |
+| danach | 24/24 ISBNs in allen 18 Fällen | 0 |
+
+Die Fehlschläge vorher: als Punkt gelesener Bindestrich („3-12.5 17154-7“) und
+Barcode-Striche in der Klarschriftzeile („9ll783125171541“). Drei Fotos sind kein
+Qualitätsnachweis; weitere ungesehene ISBN-Fotos ergänzen.
 
 Rohmetriken ohne OCR-Texte: `baseline-0.13.json` und `results-0.14.json`.
 Die aktuellen Schnitte sind heuristisch; mehrere Regalreihen, schräg gestapelte
