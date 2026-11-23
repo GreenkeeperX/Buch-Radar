@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -113,27 +114,32 @@ fun StatusPill(text: String, container: Color, content: Color, modifier: Modifie
     }
 }
 
-/** Momox state of a book as one readable pill; price is the dominant element. */
+/**
+ * Momox state of a book. Only an offered price is a coloured pill, so colour alone carries
+ * the "worth selling" signal; other states are a quiet line of text with an icon.
+ */
 @Composable
 fun MomoxStatusPill(book: BookEntity, modifier: Modifier = Modifier) {
     val status = LocalStatusColors.current
     val scheme = MaterialTheme.colorScheme
-    val label: String
-    val container: Color
-    val content: Color
-    var strong = false
-    when {
-        book.isbn.isBlank() -> { label = "Ohne ISBN nicht prüfbar"; container = status.neutralContainer; content = status.onNeutralContainer }
-        book.momoxStatus == "AVAILABLE" -> {
-            label = formatEuro((book.currentPriceCents ?: 0).toLong()); strong = true
-            container = status.successContainer; content = status.onSuccessContainer
-        }
-        book.momoxStatus == "NOT_AVAILABLE" -> { label = "Kein Ankauf"; container = scheme.surfaceContainerHighest; content = scheme.onSurfaceVariant }
-        book.momoxStatus == "ERROR" -> { label = "Prüfung fehlgeschlagen"; container = scheme.errorContainer; content = scheme.onErrorContainer }
-        book.lastCheckedAt == null -> { label = "Noch nicht geprüft"; container = scheme.secondaryContainer; content = scheme.onSecondaryContainer }
-        else -> { label = "Bei Momox unbekannt"; container = status.neutralContainer; content = status.onNeutralContainer }
+    if (book.isbn.isNotBlank() && book.momoxStatus == "AVAILABLE") {
+        val label = formatEuro((book.currentPriceCents ?: 0).toLong())
+        StatusPill(label, status.successContainer, status.onSuccessContainer, modifier.semantics { contentDescription = "Momox-Ankauf: $label" }, strong = true)
+        return
     }
-    StatusPill(label, container, content, modifier.semantics { contentDescription = "Momox: $label" }, strong)
+    val error = book.isbn.isNotBlank() && book.momoxStatus == "ERROR"
+    val label = when {
+        book.isbn.isBlank() -> "Ohne ISBN nicht prüfbar"
+        book.momoxStatus == "NOT_AVAILABLE" -> "Kein Ankauf"
+        error -> "Prüfung fehlgeschlagen"
+        book.lastCheckedAt == null -> "Noch nicht geprüft"
+        else -> "Bei Momox unbekannt"
+    }
+    val color = if (error) scheme.error else scheme.onSurfaceVariant
+    Row(modifier.semantics(mergeDescendants = true) { contentDescription = "Momox: $label" }, verticalAlignment = Alignment.CenterVertically) {
+        Icon(if (error) Icons.Filled.Warning else Icons.Outlined.Info, contentDescription = null, tint = color, modifier = Modifier.size(16.dp))
+        Text(label, Modifier.padding(start = 4.dp), style = MaterialTheme.typography.labelLarge, color = color, maxLines = 1)
+    }
 }
 
 @Composable

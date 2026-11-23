@@ -51,6 +51,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -392,7 +393,11 @@ class MainActivity : ComponentActivity() {
                 }
                 detailsBook?.let { original ->
                     val current = (books + soldBooks).firstOrNull { it.id == original.id } ?: original
-                    BookDetailsScreen(current, onClose = { detailsBook = null })
+                    BookDetailsScreen(current, onClose = { detailsBook = null },
+                        onEdit = { detailsBook = null; editingBook = it },
+                        onMarkSold = { detailsBook = null; markSold(listOf(it.id)) },
+                        onRestore = { detailsBook = null; restoreSold(listOf(it.id)) },
+                        onDelete = { detailsBook = null; deletingBook = it })
                     return@BuchRadarTheme
                 }
                 BookListScrollEffect(bookListState, session.scrollToBookId.value, listOf(LIST_HEADER_KEY) + visibleBooks.map { it.id },
@@ -403,6 +408,13 @@ class MainActivity : ComponentActivity() {
 
                 Scaffold(
                     snackbarHost = { SnackbarHost(snackbar) },
+                    floatingActionButton = {
+                        if (onListScreen && !showSoldBooks && !selectionMode && searchInput.isBlank()) ExtendedFloatingActionButton(
+                            onClick = { if (!isSearching) openScanner(ScannerMode.AUTOMATIC) },
+                            icon = { Icon(painterResource(R.drawable.ic_camera), contentDescription = null) },
+                            text = { Text("Buch oder Regal scannen", style = MaterialTheme.typography.titleMedium) }
+                        )
+                    },
                     topBar = {
                         if (!scannerOpen) TopAppBar(
                             colors = TopAppBarDefaults.topAppBarColors(containerColor = if (selectionMode) colorScheme.secondaryContainer else colorScheme.surface),
@@ -688,13 +700,9 @@ class MainActivity : ComponentActivity() {
                                 )
                             if (!showSoldBooks && !selectionMode) {
                                 val inputIsIsbn = BookInputFormat.parseIsbn(searchInput) != null
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    if (searchInput.isBlank()) {
-                                        Button(onClick = { openScanner(ScannerMode.AUTOMATIC) }, enabled = !isSearching, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
-                                            Icon(painterResource(R.drawable.ic_camera), contentDescription = null, modifier = Modifier.padding(end = 8.dp))
-                                            Text("Buch oder Regal scannen", style = MaterialTheme.typography.titleMedium)
-                                        }
-                                    } else {
+                                // With an empty field, scanning is the floating action button in thumb reach.
+                                if (searchInput.isNotBlank()) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    run {
                                         Button(onClick = { submitInput(searchInput, coverFrame) }, enabled = !isSearching, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
                                             Icon(if (inputIsIsbn) Icons.Filled.Add else Icons.Filled.Search, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
                                             Text(when { isSearching -> "Suche …"; inputIsIsbn -> "ISBN hinzufügen"; searchInput.any(Char::isLetter) -> "Im Katalog suchen"; else -> "ISBN hinzufügen" },
@@ -727,7 +735,7 @@ class MainActivity : ComponentActivity() {
                         LazyColumn(
                             state = bookListState,
                             modifier = Modifier.weight(1f),
-                            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
+                            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             // Overview, Momox action and chips scroll away so long lists keep their space.
@@ -746,24 +754,23 @@ class MainActivity : ComponentActivity() {
                                                     TextButton(onClick = { scope.launch { catchingOperation { MomoxCheckCoordinator.cancel(context) } } }) { Text("Prüfung beenden") }
                                                 }
                                             }
-                                        } else if (!selectionMode && books.isNotEmpty()) FilledTonalButton(onClick = { momoxCheckDialogOpen = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                                            Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
-                                            Text("Momox-Preise prüfen", style = MaterialTheme.typography.titleMedium)
-                                        }
-                                        momoxSummary?.let {
-                                            if (!isCheckingMomox) MomoxSummaryCard(it, summaryExpanded, { summaryExpanded = !summaryExpanded }) {
-                                                momoxSummary = null; dismissedSummaryRun = checkRun?.startedAt
-                                            }
-                                        }
+                                        } else if (!selectionMode) MomoxActionRow(
+                                            summary = momoxSummary,
+                                            expanded = summaryExpanded,
+                                            canCheck = books.isNotEmpty(),
+                                            onToggle = { summaryExpanded = !summaryExpanded },
+                                            onDismiss = { momoxSummary = null; dismissedSummaryRun = checkRun?.startedAt },
+                                            onCheck = { momoxCheckDialogOpen = true }
+                                        )
                                     }
                                     if (!selectionMode && (if (showSoldBooks) soldBooks else books).isNotEmpty()) Row(
-                                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically
+                                        Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Box {
-                                            FilterChip(selected = sortMode != BookListQuery.SORT_RECENT, onClick = { sortMenuOpen = true },
-                                                label = { Text(BookListQuery.sortLabel(sortMode)) },
-                                                leadingIcon = { Icon(painterResource(R.drawable.ic_sort), contentDescription = "Sortierung", modifier = Modifier.size(18.dp)) })
+                                            IconButton(onClick = { sortMenuOpen = true }) {
+                                                Icon(painterResource(R.drawable.ic_sort), contentDescription = "Sortierung: ${BookListQuery.sortLabel(sortMode)}",
+                                                    tint = if (sortMode != BookListQuery.SORT_RECENT) colorScheme.primary else colorScheme.onSurfaceVariant)
+                                            }
                                             DropdownMenu(expanded = sortMenuOpen, onDismissRequest = { sortMenuOpen = false }) {
                                                 BookListQuery.sorts.forEach { (key, label) ->
                                                     DropdownMenuItem(text = { Text(label) }, onClick = { sortMode = key; sortMenuOpen = false },
@@ -771,9 +778,19 @@ class MainActivity : ComponentActivity() {
                                                 }
                                             }
                                         }
-                                        if (!showSoldBooks) BookListQuery.filters.forEach { (key, label) ->
-                                            FilterChip(selected = statusFilter == key, onClick = { statusFilter = key }, label = { Text(label) },
-                                                leadingIcon = if (statusFilter == key) { { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp)) } } else null)
+                                        if (showSoldBooks) Text(BookListQuery.sortLabel(sortMode), style = MaterialTheme.typography.labelLarge, color = colorScheme.onSurfaceVariant)
+                                        else Row(
+                                            Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            // Counts on the chips; empty filters are hidden unless selected.
+                                            BookListQuery.filters.forEach { (key, label) ->
+                                                val count = books.count { BookListQuery.matchesStatus(it, key) }
+                                                if (key == BookListQuery.FILTER_ALL || count > 0 || statusFilter == key) FilterChip(
+                                                    selected = statusFilter == key, onClick = { statusFilter = key },
+                                                    label = { Text("$label $count") },
+                                                    leadingIcon = if (statusFilter == key) { { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp)) } } else null)
+                                            }
                                         }
                                     }
                                 }
@@ -788,7 +805,7 @@ class MainActivity : ComponentActivity() {
                                     },
                                     text = when {
                                         showSoldBooks && noBooksYet -> "Halte ein Buch in „Meine Bücher“ gedrückt, um es als verkauft zu markieren."
-                                        noBooksYet -> "Scanne den Barcode auf der Rückseite, ein Titelblatt oder ein ganzes Regal. Du kannst ISBN oder Titel auch oben eintippen."
+                                        noBooksYet -> "Scanne den Barcode auf der Rückseite, ein Titelblatt oder ein ganzes Regal. Du kannst ISBN oder Titel auch oben eintippen. Danach fragt „Momox prüfen“ die Ankaufpreise ab."
                                         else -> "Kein Buch entspricht der Suche oder dem Filter."
                                     },
                                     action = when {

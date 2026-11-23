@@ -86,7 +86,17 @@ fun SettingsScreen(theme: String, onTheme: (String) -> Unit, onClose: () -> Unit
                 when(page) {
                     "settings" -> {
                         item { de.buchradar.app.ui.SectionTitle("Darstellung") }
-                        item { ChoiceMenu(when(theme) { "dark" -> "Dunkel"; "light" -> "Hell"; else -> "Geräteeinstellung" }, listOf("system" to "Geräteeinstellung", "light" to "Hell", "dark" to "Dunkel")) { onTheme(it); prefs.edit().putString("theme", it).apply() } }
+                        item {
+                            // Three options are all visible at once instead of hidden in a menu.
+                            val options = listOf("system" to "System", "light" to "Hell", "dark" to "Dunkel")
+                            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                                options.forEachIndexed { index, (key, label) ->
+                                    SegmentedButton(selected = (theme.takeIf { it == "light" || it == "dark" } ?: "system") == key,
+                                        onClick = { onTheme(key); prefs.edit().putString("theme", key).apply() },
+                                        shape = SegmentedButtonDefaults.itemShape(index, options.size)) { Text(label) }
+                                }
+                            }
+                        }
                         item { HorizontalDivider(); de.buchradar.app.ui.SectionTitle("Automatische Prüfung") }
                         item { SwitchRow("Regelmäßig Momox prüfen", automatic) { automatic = it; prefs.edit().putBoolean("auto_check", it).apply(); MomoxWorkScheduler.configure(context, it, days) } }
                         if (automatic) {
@@ -111,7 +121,7 @@ fun SettingsScreen(theme: String, onTheme: (String) -> Unit, onClose: () -> Unit
                         item { OutlinedButton(onClick = { import.launch(arrayOf("application/json", "text/plain")) }, modifier = Modifier.fillMaxWidth()) { Text("Sicherung importieren") } }
                         item { HorizontalDivider(); NavRow("Diagnose und Protokoll") { log = AppLog.read(context); page = "log" } }
                         item { NavRow("Datenschutz und Datenquellen") { page = "privacy" } }
-                        item { Text("Bücher-Radar ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", style = MaterialTheme.typography.bodyLarge) }
+                        item { Text("Bücher-Radar ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", Modifier.padding(top = 8.dp, bottom = 24.dp), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     }
                     "log" -> {
                         item { Text("Begrenztes lokales Protokoll ohne Kameraaufnahmen. Vor dem Weitergeben prüfen.") }

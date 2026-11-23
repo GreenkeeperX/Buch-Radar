@@ -7,6 +7,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
@@ -14,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import de.buchradar.app.data.BookEntity
@@ -32,7 +36,14 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BookDetailsScreen(original: BookEntity, onClose: () -> Unit) {
+fun BookDetailsScreen(
+    original: BookEntity,
+    onClose: () -> Unit,
+    onEdit: (BookEntity) -> Unit = {},
+    onMarkSold: (BookEntity) -> Unit = {},
+    onRestore: (BookEntity) -> Unit = {},
+    onDelete: (BookEntity) -> Unit = {}
+) {
     val context = LocalContext.current
     val dao = remember { BuchRadarDatabase.get(context).bookDao() }
     val stored by dao.observeById(original.id).collectAsState(initial = original)
@@ -50,6 +61,22 @@ fun BookDetailsScreen(original: BookEntity, onClose: () -> Unit) {
         Scaffold(modifier = Modifier.fillMaxSize().safeDrawingPadding(), topBar = {
             TopAppBar(title = { Text("Buchdetails") }, navigationIcon = {
                 IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zurück") }
+            }, actions = {
+                // Same actions as the card menu in the list.
+                var menuOpen by remember { mutableStateOf(false) }
+                Box {
+                    IconButton(onClick = { menuOpen = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "Weitere Aktionen") }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        if (book.soldAt == null) DropdownMenuItem(text = { Text("Als verkauft markieren") }, leadingIcon = { Icon(painterResource(R.drawable.ic_sold), null) },
+                            onClick = { menuOpen = false; onMarkSold(book) })
+                        else DropdownMenuItem(text = { Text("Zurück in Meine Bücher") }, leadingIcon = { Icon(painterResource(R.drawable.ic_books), null) },
+                            onClick = { menuOpen = false; onRestore(book) })
+                        DropdownMenuItem(text = { Text("Bearbeiten") }, leadingIcon = { Icon(Icons.Filled.Edit, null) }, onClick = { menuOpen = false; onEdit(book) })
+                        HorizontalDivider()
+                        DropdownMenuItem(text = { Text("Entfernen", color = scheme.error) }, leadingIcon = { Icon(Icons.Filled.Delete, null, tint = scheme.error) },
+                            onClick = { menuOpen = false; onDelete(book) })
+                    }
+                }
             })
         }) { padding ->
             LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -105,7 +132,6 @@ fun BookDetailsScreen(original: BookEntity, onClose: () -> Unit) {
                     }
                 }
                 message?.let { item { InfoBanner(it, onDismiss = { message = null }) } }
-                item { book.metadataSource?.let { Text("Datenquelle: $it", style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant) } }
                 item { HorizontalDivider(); SectionTitle("Prüfverlauf") }
                 if (history.isEmpty()) item { Text("Noch kein gespeicherter Verlauf. Neue Prüfungen erscheinen hier.", color = scheme.onSurfaceVariant) }
                 items(history, key = { it.id }) { check ->
@@ -123,6 +149,9 @@ fun BookDetailsScreen(original: BookEntity, onClose: () -> Unit) {
                         Text(label, style = MaterialTheme.typography.titleMedium, color = color)
                     }
                 }
+                book.metadataSource?.let { source -> item {
+                    Text("Datenquelle: $source", Modifier.padding(top = 8.dp), style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+                } }
             }
         }
     }

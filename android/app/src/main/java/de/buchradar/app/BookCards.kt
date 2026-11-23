@@ -2,18 +2,22 @@ package de.buchradar.app
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -49,7 +53,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
@@ -100,36 +107,45 @@ internal fun ListOverview(title: String, totals: BookListTotals, showValue: Bool
     }
 }
 
+/**
+ * One compact line for Momox: the last result (tap for the value, × to hide) and the check
+ * action. Without a result it says what the check does, so first-time users know.
+ */
 @Composable
-internal fun MomoxSummaryCard(summary: MomoxSummary, expanded: Boolean, onToggle: () -> Unit, onDismiss: () -> Unit) {
+internal fun MomoxActionRow(summary: MomoxSummary?, expanded: Boolean, canCheck: Boolean,
+    onToggle: () -> Unit, onDismiss: () -> Unit, onCheck: () -> Unit) {
     val status = LocalStatusColors.current
     val scheme = MaterialTheme.colorScheme
-    Card(onClick = onToggle, modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = scheme.surfaceContainerHigh)) {
-        Column(Modifier.fillMaxWidth().padding(start = 12.dp, top = 6.dp, bottom = 8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Letzte Momox-Prüfung", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge, color = scheme.onSurfaceVariant)
-                Icon(if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
-                    contentDescription = if (expanded) "Weniger anzeigen" else "Mehr anzeigen", tint = scheme.onSurfaceVariant)
-                TextButton(onClick = onDismiss) { Text("Ausblenden") }
+    Column(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            if (summary != null) {
+                Row(Modifier.weight(1f).clickable(onClickLabel = if (expanded) "Weniger anzeigen" else "Ankaufwert anzeigen", onClick = onToggle)
+                    .padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        buildAnnotatedString {
+                            append("Letzte Prüfung: ")
+                            withStyle(SpanStyle(color = if (summary.available > 0) status.success else scheme.onSurfaceVariant, fontWeight = FontWeight.Bold)) {
+                                append("${summary.available} Ankauf")
+                            }
+                            append(" · ${summary.unavailable} kein Ankauf")
+                            if (summary.errors > 0) withStyle(SpanStyle(color = scheme.error, fontWeight = FontWeight.Bold)) { append(" · ${summary.errors} Fehler") }
+                        },
+                        style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant, modifier = Modifier.weight(1f, fill = false)
+                    )
+                    Icon(if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown, contentDescription = null,
+                        tint = scheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                }
+                IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, contentDescription = "Ergebnis ausblenden", tint = scheme.onSurfaceVariant) }
+            } else Text("Ankaufpreise für deine Bücher abfragen", Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+            if (canCheck) FilledTonalButton(onClick = onCheck, contentPadding = PaddingValues(horizontal = 14.dp)) {
+                Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp).padding(end = 0.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Momox prüfen")
             }
-            Row(Modifier.fillMaxWidth().padding(end = 12.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-                SummaryValue("Ankauf", summary.available, if (summary.available > 0) status.success else scheme.onSurfaceVariant)
-                SummaryValue("Kein Ankauf", summary.unavailable, scheme.onSurfaceVariant)
-                SummaryValue("Fehler", summary.errors, if (summary.errors > 0) scheme.error else scheme.onSurfaceVariant)
-            }
-            if (expanded) Text("Ankaufwert dieser Prüfung: ${formatEuro(summary.totalValueCents.toLong())}",
-                modifier = Modifier.fillMaxWidth().padding(top = 6.dp, end = 12.dp), textAlign = TextAlign.Center,
-                style = MaterialTheme.typography.titleMedium)
         }
-    }
-}
-
-@Composable
-private fun SummaryValue(label: String, value: Int, color: androidx.compose.ui.graphics.Color) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.semantics(mergeDescendants = true) {}) {
-        Text(value.toString(), color = color, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        Text(label, color = color, style = MaterialTheme.typography.labelLarge)
+        if (summary != null && expanded) Text("Ankaufwert dieser Prüfung: ${formatEuro(summary.totalValueCents.toLong())}",
+            style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 4.dp))
     }
 }
 
@@ -174,6 +190,10 @@ internal fun BookCard(
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     MomoxStatusPill(book)
                     if (checkQueued) Text("wird geprüft …", style = MaterialTheme.typography.labelLarge, color = scheme.primary)
+                    // Direct check only where it is useful: never checked or the last attempt failed.
+                    else if (!isSold && !selectionMode && book.isbn.isNotBlank() && (book.lastCheckedAt == null || book.lastAttemptStatus == "ERROR"))
+                        TextButton(onClick = onMomoxCheck, contentPadding = PaddingValues(horizontal = 8.dp),
+                            modifier = Modifier.semantics { contentDescription = "${book.title ?: "Buch"} bei Momox prüfen" }) { Text("Prüfen") }
                 }
                 when {
                     book.lastAttemptStatus == "ERROR" -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -201,9 +221,6 @@ internal fun BookCard(
                         DropdownMenuItem(text = { Text("Entfernen", color = scheme.error) }, leadingIcon = { Icon(Icons.Filled.Delete, null, tint = scheme.error) },
                             onClick = { menuOpen = false; onDelete() })
                     }
-                }
-                if (!isSold && book.isbn.isNotBlank()) IconButton(onClick = onMomoxCheck, enabled = !checkQueued) {
-                    Icon(Icons.Filled.Refresh, contentDescription = "${book.title ?: "Buch"} bei Momox prüfen", tint = if (checkQueued) scheme.outline else scheme.primary)
                 }
             }
         }
