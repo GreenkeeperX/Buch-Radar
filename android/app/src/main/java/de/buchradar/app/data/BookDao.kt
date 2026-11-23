@@ -100,6 +100,8 @@ interface BookDao {
     suspend fun nextCheck(): PendingCheck?
     @Query("SELECT * FROM pending_checks WHERE isbn = :isbn")
     suspend fun pendingFor(isbn: String): PendingCheck?
+    @Query("SELECT isbn FROM pending_checks")
+    fun observePendingIsbns(): Flow<List<String>>
     @Query("SELECT COUNT(*) FROM pending_checks")
     suspend fun pendingCount(): Int
     @Query("DELETE FROM pending_checks WHERE isbn = :isbn")

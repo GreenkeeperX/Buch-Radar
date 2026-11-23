@@ -1,25 +1,34 @@
 package de.buchradar.app
 
-import androidx.compose.foundation.layout.*
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.activity.compose.BackHandler
 import de.buchradar.app.data.BookEntity
 import de.buchradar.app.data.BuchRadarDatabase
+import de.buchradar.app.domain.BookInputFormat
 import de.buchradar.app.domain.catchingOperation
 import de.buchradar.app.network.BookCatalog
 import de.buchradar.app.network.CatalogAccess
+import de.buchradar.app.ui.CoverImage
+import de.buchradar.app.ui.InfoBanner
+import de.buchradar.app.ui.LocalStatusColors
+import de.buchradar.app.ui.MomoxStatusPill
+import de.buchradar.app.ui.SectionTitle
+import de.buchradar.app.ui.formatEuro
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.text.NumberFormat
-import java.util.Locale
-import java.util.Date
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -29,46 +38,89 @@ fun BookDetailsScreen(original: BookEntity, onClose: () -> Unit) {
     val stored by dao.observeById(original.id).collectAsState(initial = original)
     val book = stored ?: original
     val history by dao.observeHistory(book.isbn).collectAsState(initial = emptyList())
+    val pending by dao.observePendingIsbns().collectAsState(initial = emptyList())
+    val queued = book.isbn.isNotBlank() && book.isbn in pending
     val scope = rememberCoroutineScope()
     var loading by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
+    val scheme = MaterialTheme.colorScheme
+    val status = LocalStatusColors.current
     BackHandler(onBack = onClose)
-    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
-        Scaffold(modifier = Modifier.fillMaxSize().safeDrawingPadding(), topBar = { TopAppBar(title = { Text("Buchdetails") }, navigationIcon = { TextButton(onClick = onClose) { Text("Zurück") } }) }) { padding ->
-            LazyColumn(Modifier.fillMaxSize().padding(padding).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                item { Text(book.title ?: "Unbekannter Titel", style = MaterialTheme.typography.headlineSmall) }
-                item { book.author?.let { Text(it, style = MaterialTheme.typography.titleLarge) }; Text(if (book.isbn.isBlank()) "Keine ISBN – manuell erfasst" else "ISBN ${book.isbn}", style = MaterialTheme.typography.bodyLarge) }
-                item { book.metadataSource?.let { Text("Datenquelle: $it") } }
-                item { OutlinedButton(enabled = !loading && book.isbn.isNotBlank(), onClick = { scope.launch {
-                    loading = true
-                    val result = catchingOperation {
-                        val report = CatalogAccess.report { BookCatalog.findByIsbn(book.isbn) }
-                        val metadata = report.value
-                        if (metadata != null && metadata.conflictingFields.isEmpty()) dao.fillMissingMetadata(book.id, book.isbn, metadata.title, metadata.author, metadata.publicationYear, metadata.coverUrl, metadata.sources.joinToString())
-                        report
-                    }
-                    loading = false
-                    message = result.fold({ report ->
-                        val status = when {
-                            report.value == null -> "Keine weiteren Buchdaten gefunden."
-                            report.value.conflictingFields.isNotEmpty() -> "Die Kataloge widersprechen sich. Keine Angaben verändert; bitte das Buch manuell bearbeiten."
-                            else -> "Fehlende Buchdaten ergänzt."
+    Box(Modifier.fillMaxSize().background(scheme.surface)) {
+        Scaffold(modifier = Modifier.fillMaxSize().safeDrawingPadding(), topBar = {
+            TopAppBar(title = { Text("Buchdetails") }, navigationIcon = {
+                IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zurück") }
+            })
+        }) { padding ->
+            LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        CoverImage(book.coverUrl, book.title, 108.dp, 160.dp)
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(book.title ?: "Unbekannter Titel", style = MaterialTheme.typography.headlineSmall)
+                            book.author?.let { Text(it, style = MaterialTheme.typography.titleMedium, color = scheme.onSurfaceVariant) }
+                            Text(if (book.isbn.isBlank()) "Keine ISBN – manuell erfasst" else "ISBN ${BookInputFormat.displayIsbn(book.isbn)}", style = MaterialTheme.typography.bodyLarge)
+                            book.publicationYear?.let { Text("Erscheinungsjahr $it", style = MaterialTheme.typography.bodyMedium) }
+                            MomoxStatusPill(book)
+                            book.lastCheckedAt?.let { Text("Stand ${formatDateTime(it)}", style = MaterialTheme.typography.labelLarge, color = scheme.onSurfaceVariant) }
                         }
-                        (listOf(status) + report.warnings).joinToString("\n")
-                    }, { "Katalog nicht erreichbar. Bitte erneut versuchen." })
-                } }) { Text(if(loading) "Suche Buchdaten …" else "Fehlende Buchdaten ergänzen") } }
-                item { message?.let { Text(it) }; HorizontalDivider(); Text("Prüfverlauf", style = MaterialTheme.typography.titleLarge) }
-                if (history.isEmpty()) item { Text("Noch kein gespeicherter Verlauf. Neue Prüfungen erscheinen hier.") }
+                    }
+                }
+                if (book.lastAttemptStatus == "ERROR") item {
+                    InfoBanner("Letzte Prüfung fehlgeschlagen" + (book.lastError?.let { ": $it" } ?: "") + ". Das ältere Ergebnis bleibt erhalten.")
+                }
+                item {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (book.soldAt == null) FilledTonalButton(
+                            enabled = book.isbn.isNotBlank() && !queued,
+                            onClick = { scope.launch {
+                                message = if (catchingOperation { MomoxCheckCoordinator.enqueue(context, listOf(book)) }.isSuccess) "Prüfung eingereiht. Das Ergebnis erscheint hier." else "Prüfung konnte nicht gestartet werden."
+                            } },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Filled.Refresh, null, Modifier.padding(end = 6.dp))
+                            Text(if (queued) "Wird geprüft …" else "Momox prüfen")
+                        }
+                        OutlinedButton(enabled = !loading && book.isbn.isNotBlank(), modifier = Modifier.weight(1f), onClick = { scope.launch {
+                            loading = true
+                            val result = catchingOperation {
+                                val report = CatalogAccess.report { BookCatalog.findByIsbn(book.isbn) }
+                                val metadata = report.value
+                                if (metadata != null && metadata.conflictingFields.isEmpty()) dao.fillMissingMetadata(book.id, book.isbn, metadata.title, metadata.author, metadata.publicationYear, metadata.coverUrl, metadata.sources.joinToString())
+                                report
+                            }
+                            loading = false
+                            message = result.fold({ report ->
+                                val text = when {
+                                    report.value == null -> "Keine weiteren Buchdaten gefunden."
+                                    report.value.conflictingFields.isNotEmpty() -> "Die Kataloge widersprechen sich. Keine Angaben verändert; bitte das Buch manuell bearbeiten."
+                                    else -> "Fehlende Buchdaten ergänzt."
+                                }
+                                (listOf(text) + report.warnings).joinToString("\n")
+                            }, { "Katalog nicht erreichbar. Bitte erneut versuchen." })
+                        } }) {
+                            Icon(Icons.Filled.Search, null, Modifier.padding(end = 6.dp))
+                            Text(if (loading) "Suche …" else "Daten ergänzen")
+                        }
+                    }
+                }
+                message?.let { item { InfoBanner(it, onDismiss = { message = null }) } }
+                item { book.metadataSource?.let { Text("Datenquelle: $it", style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant) } }
+                item { HorizontalDivider(); SectionTitle("Prüfverlauf") }
+                if (history.isEmpty()) item { Text("Noch kein gespeicherter Verlauf. Neue Prüfungen erscheinen hier.", color = scheme.onSurfaceVariant) }
                 items(history, key = { it.id }) { check ->
-                    Column {
-                        Text(SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.GERMANY).format(Date(check.checkedAt)))
-                        Text(when(check.status) {
-                            "AVAILABLE" -> "Ankauf: ${NumberFormat.getCurrencyInstance(Locale.GERMANY).format((check.priceCents ?: 0) / 100.0)}"
-                            "NOT_AVAILABLE" -> "Kein Ankauf"
-                            "ERROR" -> "Prüfung fehlgeschlagen"
-                            else -> "ISBN bei Momox unbekannt"
-                        }, style = MaterialTheme.typography.titleMedium)
-                        check.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    Row(Modifier.fillMaxWidth().semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(formatDateTime(check.checkedAt), style = MaterialTheme.typography.labelLarge, color = scheme.onSurfaceVariant)
+                            check.error?.let { Text(it, color = scheme.error, style = MaterialTheme.typography.bodyMedium) }
+                        }
+                        val (label, color) = when (check.status) {
+                            "AVAILABLE" -> formatEuro((check.priceCents ?: 0).toLong()) to status.success
+                            "NOT_AVAILABLE" -> "Kein Ankauf" to scheme.onSurfaceVariant
+                            "ERROR" -> "Fehlgeschlagen" to scheme.error
+                            else -> "ISBN unbekannt" to scheme.onSurfaceVariant
+                        }
+                        Text(label, style = MaterialTheme.typography.titleMedium, color = color)
                     }
                 }
             }

@@ -13,6 +13,7 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -72,21 +73,23 @@ fun SettingsScreen(theme: String, onTheme: (String) -> Unit, onClose: () -> Unit
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
         BackHandler { if (page == "settings") onClose() else page = "settings" }
         Scaffold(modifier = Modifier.fillMaxSize().safeDrawingPadding(), topBar = { TopAppBar(title = { Text(when(page) { "log" -> "Diagnose"; "privacy" -> "Datenschutz"; else -> "Einstellungen" }) }, navigationIcon = {
-            TextButton(onClick = { if (page == "settings") onClose() else page = "settings" }) { Text("Zurück") }
+            IconButton(onClick = { if (page == "settings") onClose() else page = "settings" }) {
+                Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Zurück")
+            }
         }) }) { padding ->
             LazyColumn(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(bottom = 24.dp)) {
-                item { message?.let { Text(it, style = MaterialTheme.typography.bodyLarge) } }
+                item { message?.let { de.buchradar.app.ui.InfoBanner(it, onDismiss = { message = null }) } }
                 when(page) {
                     "settings" -> {
-                        item { Text("Darstellung", style = MaterialTheme.typography.titleLarge) }
+                        item { de.buchradar.app.ui.SectionTitle("Darstellung") }
                         item { ChoiceMenu(when(theme) { "dark" -> "Dunkel"; "light" -> "Hell"; else -> "Geräteeinstellung" }, listOf("system" to "Geräteeinstellung", "light" to "Hell", "dark" to "Dunkel")) { onTheme(it); prefs.edit().putString("theme", it).apply() } }
-                        item { HorizontalDivider(); Text("Automatische Prüfung", style = MaterialTheme.typography.titleLarge) }
+                        item { HorizontalDivider(); de.buchradar.app.ui.SectionTitle("Automatische Prüfung") }
                         item { SwitchRow("Regelmäßig Momox prüfen", automatic) { automatic = it; prefs.edit().putBoolean("auto_check", it).apply(); MomoxWorkScheduler.configure(context, it, days) } }
                         if (automatic) {
                             item { ChoiceMenu(if(days == 1) "Täglich" else "Wöchentlich", listOf("1" to "Täglich", "7" to "Wöchentlich")) { days = it.toInt(); prefs.edit().putInt("auto_check_days", days).apply(); MomoxWorkScheduler.configure(context, true, days) } }
                             item { Text("Android startet die Prüfung bei verfügbarer Verbindung. Der genaue Zeitpunkt kann variieren.", style = MaterialTheme.typography.bodyMedium) }
                         }
-                        item { HorizontalDivider(); Text("Benachrichtigungen", style = MaterialTheme.typography.titleLarge) }
+                        item { HorizontalDivider(); de.buchradar.app.ui.SectionTitle("Benachrichtigungen") }
                         item { SwitchRow("Ergebnisse automatisch melden", notifications) { enabled ->
                             if (enabled && Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) permission.launch(Manifest.permission.POST_NOTIFICATIONS)
                             else { notifications = enabled; prefs.edit().putBoolean("notifications", enabled).apply() }
@@ -98,7 +101,7 @@ fun SettingsScreen(theme: String, onTheme: (String) -> Unit, onClose: () -> Unit
                             if (!automatic) item { Text("Für automatische Meldungen auch die regelmäßige Prüfung einschalten.") }
                             if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) item { Text("Android blockiert Benachrichtigungen für diese App.", color = MaterialTheme.colorScheme.error) }
                         }
-                        item { HorizontalDivider(); Text("Datensicherung", style = MaterialTheme.typography.titleLarge) }
+                        item { HorizontalDivider(); de.buchradar.app.ui.SectionTitle("Datensicherung") }
                         item { Text("Die Sicherung enthält deine Bücher und den Verkaufsstatus. Angebote werden nach dem Import neu geprüft.") }
                         item { OutlinedButton(onClick = { export.launch("buecher-radar.json") }, modifier = Modifier.fillMaxWidth()) { Text("Bücherliste sichern") } }
                         item { OutlinedButton(onClick = { import.launch(arrayOf("application/json", "text/plain")) }, modifier = Modifier.fillMaxWidth()) { Text("Sicherung importieren") } }
@@ -116,10 +119,10 @@ fun SettingsScreen(theme: String, onTheme: (String) -> Unit, onClose: () -> Unit
                         items(log.withIndex().toList(), key = { it.index }) { Text(it.value, style = MaterialTheme.typography.bodyMedium) }
                     }
                     "privacy" -> {
-                        item { Text("Kamera", style = MaterialTheme.typography.titleLarge); Text("Barcode und Text werden auf dem Gerät erkannt. Kamerabilder werden nicht hochgeladen. Für den Cover-Test lädt die App Katalogbilder und vergleicht sie lokal.") }
-                        item { Text("Online-Suche", style = MaterialTheme.typography.titleLarge); Text("Suchtext oder ISBN werden an Open Library, Google Books und bei Bedarf die Deutsche Nationalbibliothek gesendet. Die Dienste erhalten dabei auch die Netzwerkadresse. Momox erhält die zu prüfende ISBN. Suche und Ankaufspreise benötigen Internet.") }
-                        item { Text("Deine Daten", style = MaterialTheme.typography.titleLarge); Text("Die Bücherliste bleibt lokal. Offene Regal-Funde werden mit erkanntem Text und Katalogtreffern lokal gespeichert, ohne Kameraaufnahmen. Sie sind nicht Teil des Bücherlisten-Exports oder der Systemsicherung. Android kann Einstellungen gemäß deinen Geräteoptionen sichern. Bücherliste, Diagnose und offene Prüfaufträge sind von der Systemsicherung ausgeschlossen. Für einen Gerätewechsel bitte die Bücherliste exportieren und auf dem neuen Gerät importieren. Exportierte Bücherlisten enthalten deinen privaten Bestand.") }
-                        item { Text("Ankauf", style = MaterialTheme.typography.titleLarge); Text("Bücher-Radar verkauft keine Bücher automatisch. Ein angezeigtes Angebot ersetzt nicht die Prüfung von Ausgabe und Zustand beim Verkaufsabschluss bei Momox.") }
+                        item { de.buchradar.app.ui.SectionTitle("Kamera"); Text("Barcode und Text werden auf dem Gerät erkannt. Kamerabilder werden nicht hochgeladen. Für den Cover-Test lädt die App Katalogbilder und vergleicht sie lokal.") }
+                        item { de.buchradar.app.ui.SectionTitle("Online-Suche"); Text("Suchtext oder ISBN werden an Open Library, Google Books und bei Bedarf die Deutsche Nationalbibliothek gesendet. Die Dienste erhalten dabei auch die Netzwerkadresse. Momox erhält die zu prüfende ISBN. Suche und Ankaufspreise benötigen Internet.") }
+                        item { de.buchradar.app.ui.SectionTitle("Deine Daten"); Text("Die Bücherliste bleibt lokal. Offene Regal-Funde werden mit erkanntem Text und Katalogtreffern lokal gespeichert, ohne Kameraaufnahmen. Sie sind nicht Teil des Bücherlisten-Exports oder der Systemsicherung. Android kann Einstellungen gemäß deinen Geräteoptionen sichern. Bücherliste, Diagnose und offene Prüfaufträge sind von der Systemsicherung ausgeschlossen. Für einen Gerätewechsel bitte die Bücherliste exportieren und auf dem neuen Gerät importieren. Exportierte Bücherlisten enthalten deinen privaten Bestand.") }
+                        item { de.buchradar.app.ui.SectionTitle("Ankauf"); Text("Bücher-Radar verkauft keine Bücher automatisch. Ein angezeigtes Angebot ersetzt nicht die Prüfung von Ausgabe und Zustand beim Verkaufsabschluss bei Momox.") }
                     }
                 }
             }
