@@ -45,7 +45,10 @@ private val LightColors = lightColorScheme(
     surfaceContainerLow = Color(0xFFEFF5F2),
     surfaceContainer = Color(0xFFE9EFEC),
     surfaceContainerHigh = Color(0xFFE3EAE7),
-    surfaceContainerHighest = Color(0xFFDEE4E1)
+    surfaceContainerHighest = Color(0xFFDEE4E1),
+    inverseSurface = Color(0xFF2B3230),
+    inverseOnSurface = Color(0xFFECF2EF),
+    inversePrimary = Color(0xFF8AD5C8)
 )
 
 private val DarkColors = darkColorScheme(
@@ -77,7 +80,10 @@ private val DarkColors = darkColorScheme(
     surfaceContainerLow = Color(0xFF161D1C),
     surfaceContainer = Color(0xFF1A2120),
     surfaceContainerHigh = Color(0xFF252B2A),
-    surfaceContainerHighest = Color(0xFF2F3635)
+    surfaceContainerHighest = Color(0xFF2F3635),
+    inverseSurface = Color(0xFFDDE4E1),
+    inverseOnSurface = Color(0xFF2B3230),
+    inversePrimary = Color(0xFF00695F)
 )
 
 /** Semantic colours Material 3 does not define (purchase offer = success). */

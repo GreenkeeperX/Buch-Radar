@@ -91,17 +91,19 @@ data class BookListTotals(
 
 /** Formatting of typed or scanned ISBN input. */
 object BookInputFormat {
-    fun parseIsbn(value: String): ISBN? = catchingOperation { ISBN.valueOf(value.trim()) }.getOrNull()
-
-    fun autoFormatIsbn(value: String): String {
-        val compact = value.filter { it.isDigit() || it.equals('x', ignoreCase = true) }
-        return parseIsbn(compact)?.toString() ?: compact.uppercase()
+    /** Accepts ISBN-10/13 with or without hyphens and spaces. */
+    fun parseIsbn(value: String): ISBN? {
+        val compact = value.trim().filterNot { it == '-' || it.isWhitespace() }
+        if (compact.isEmpty()) return null
+        return catchingOperation { ISBN.valueOf(compact) }.getOrNull()
     }
 
-    /** Only purely numeric input is reformatted; titles are left untouched. */
-    fun formatBookInput(value: String): String =
-        if (value.isNotEmpty() && value.all { it.isDigit() || it.equals('x', true) || it == '-' || it.isWhitespace() }) autoFormatIsbn(value)
-        else value
+    /** Hyphenated display form of a complete ISBN; other input is returned unchanged. */
+    fun autoFormatIsbn(value: String): String = parseIsbn(value)?.toString() ?: value
+
+    // Typed input is deliberately never reformatted while editing: a 10-digit prefix of an
+    // ISBN-13 can itself be a valid ISBN-10, and rewriting it moved the cursor and mangled
+    // the remaining digits. Input is normalised only when it is submitted.
 
     fun displayIsbn(value: String): String = parseIsbn(value)?.toString() ?: value
 }

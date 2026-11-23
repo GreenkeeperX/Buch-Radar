@@ -83,6 +83,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -308,6 +310,13 @@ class MainActivity : ComponentActivity() {
                             else "Zurückholen fehlgeschlagen. Bitte erneut versuchen."
                     }
                 }
+                val markSold: (List<String>) -> Unit = { ids ->
+                    scope.launch {
+                        val marked = catchingOperation { dao.updateSoldStatus(ids, System.currentTimeMillis()) }
+                        if (marked.isFailure) message = "Markieren fehlgeschlagen. Bitte erneut versuchen."
+                        else showUndo(if (ids.size == 1) "Als verkauft markiert" else "${ids.size} Bücher als verkauft markiert") { dao.updateSoldStatus(ids, null) }
+                    }
+                }
                 val deleteBook: (BookEntity) -> Unit = { book ->
                     scope.launch {
                         if (catchingOperation { dao.deleteById(book.id) }.isFailure) {
@@ -367,7 +376,7 @@ class MainActivity : ComponentActivity() {
                     BookDetailsScreen(current, onClose = { detailsBook = null })
                     return@BuchRadarTheme
                 }
-                BookListScrollEffect(bookListState, session.scrollToBookId.value, visibleBooks.map { it.id },
+                BookListScrollEffect(bookListState, session.scrollToBookId.value, listOf(LIST_HEADER_KEY) + visibleBooks.map { it.id },
                     enabled = !scannerOpen && shelfResults == null && coverCandidates.isEmpty()) {
                     session.scrollToBookId.value = null
                 }
@@ -392,7 +401,10 @@ class MainActivity : ComponentActivity() {
                                     shelfResults != null -> Text("Regal-Funde")
                                     coverCandidates.isNotEmpty() -> Text("Treffer auswählen")
                                     else -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Image(painter = painterResource(R.drawable.ic_launcher_foreground), contentDescription = null, modifier = Modifier.size(36.dp))
+                                        // Same look as the launcher icon; the adaptive foreground has a wide safe zone.
+                                        Box(Modifier.size(38.dp).clip(CircleShape).background(androidx.compose.ui.res.colorResource(R.color.ic_launcher_background))) {
+                                            Image(painter = painterResource(R.drawable.ic_launcher_foreground), contentDescription = null, modifier = Modifier.fillMaxSize().scale(1.45f))
+                                        }
                                         Text(stringResource(R.string.app_name), fontWeight = FontWeight.Bold)
                                     }
                                 }
@@ -422,12 +434,7 @@ class MainActivity : ComponentActivity() {
                                 Button(onClick = {
                                     val ids = selectedVisibleIds.toList()
                                     exitSelection()
-                                    if (showSoldBooks) restoreSold(ids)
-                                    else scope.launch {
-                                        val marked = catchingOperation { dao.updateSoldStatus(ids, System.currentTimeMillis()) }
-                                        if (marked.isFailure) message = "Markieren fehlgeschlagen. Bitte erneut versuchen."
-                                        else showUndo(if (ids.size == 1) "Als verkauft markiert" else "${ids.size} Bücher als verkauft markiert") { dao.updateSoldStatus(ids, null) }
-                                    }
+                                    if (showSoldBooks) restoreSold(ids) else markSold(ids)
                                 }, enabled = selectedVisibleIds.isNotEmpty(), modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                                     Icon(painterResource(if (showSoldBooks) R.drawable.ic_books else R.drawable.ic_sold), contentDescription = null, modifier = Modifier.padding(end = 8.dp))
                                     Text(if (showSoldBooks) "Zurück in Meine Bücher (${selectedVisibleIds.size})" else "Als verkauft markieren (${selectedVisibleIds.size})")
@@ -646,8 +653,8 @@ class MainActivity : ComponentActivity() {
                         Column(Modifier.padding(horizontal = 16.dp).padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             if (!selectionMode) OutlinedTextField(
                                     value = searchInput,
-                                    onValueChange = { searchInput = BookInputFormat.formatBookInput(it); coverFrame = null; visualCoverTest = false },
-                                    placeholder = { Text(if (showSoldBooks) "Verkaufte Bücher durchsuchen" else "ISBN, Titel oder Liste durchsuchen") },
+                                    onValueChange = { searchInput = it; coverFrame = null; visualCoverTest = false },
+                                    placeholder = { Text(if (showSoldBooks) "Verkaufte durchsuchen" else "ISBN oder Titel", maxLines = 1) },
                                     leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
                                     textStyle = MaterialTheme.typography.bodyLarge,
                                     trailingIcon = if (searchInput.isNotEmpty()) {
@@ -697,74 +704,79 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                             message?.let { InfoBanner(it, onDismiss = { message = null }) }
-                            if (books.isNotEmpty() || showSoldBooks) ListOverview(if (showSoldBooks) "Verkaufte Bücher" else "Meine Bücher", totals, showValue = !showSoldBooks)
-                            if (!showSoldBooks && books.isNotEmpty()) {
-                                if (isCheckingMomox) Card(colors = CardDefaults.cardColors(containerColor = colorScheme.secondaryContainer), modifier = Modifier.fillMaxWidth()) {
-                                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        Text("Momox-Prüfung · $momoxProgress von $momoxTotal", style = MaterialTheme.typography.titleMedium)
-                                        LinearProgressIndicator(progress = { if (momoxTotal > 0) momoxProgress / momoxTotal.toFloat() else 0f }, modifier = Modifier.fillMaxWidth())
-                                        checkRun?.pausedReason?.let { Text(it, color = colorScheme.error) }
-                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            if (checkRun?.pausedReason != null) OutlinedButton(onClick = { scope.launch { catchingOperation { MomoxCheckCoordinator.resume(context) } } }) { Text("Erneut versuchen") }
-                                            TextButton(onClick = { scope.launch { catchingOperation { MomoxCheckCoordinator.cancel(context) } } }) { Text("Prüfung beenden") }
-                                        }
-                                    }
-                                } else if (!selectionMode) FilledTonalButton(onClick = { momoxCheckDialogOpen = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                                    Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
-                                    Text("Momox-Preise prüfen", style = MaterialTheme.typography.titleMedium)
-                                }
-                                momoxSummary?.let {
-                                    if (!isCheckingMomox) MomoxSummaryCard(it, summaryExpanded, { summaryExpanded = !summaryExpanded }) {
-                                        momoxSummary = null; dismissedSummaryRun = checkRun?.startedAt
-                                    }
-                                }
-                            }
-                            if (!selectionMode && (if (showSoldBooks) soldBooks else books).isNotEmpty()) Row(
-                                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Box {
-                                    FilterChip(selected = sortMode != BookListQuery.SORT_RECENT, onClick = { sortMenuOpen = true },
-                                        label = { Text(BookListQuery.sortLabel(sortMode)) },
-                                        leadingIcon = { Icon(painterResource(R.drawable.ic_sort), contentDescription = "Sortierung", modifier = Modifier.size(18.dp)) })
-                                    DropdownMenu(expanded = sortMenuOpen, onDismissRequest = { sortMenuOpen = false }) {
-                                        BookListQuery.sorts.forEach { (key, label) ->
-                                            DropdownMenuItem(text = { Text(label) }, onClick = { sortMode = key; sortMenuOpen = false },
-                                                trailingIcon = if (key == sortMode) { { Icon(Icons.Filled.Check, contentDescription = "Ausgewählt") } } else null)
-                                        }
-                                    }
-                                }
-                                if (!showSoldBooks) BookListQuery.filters.forEach { (key, label) ->
-                                    FilterChip(selected = statusFilter == key, onClick = { statusFilter = key }, label = { Text(label) },
-                                        leadingIcon = if (statusFilter == key) { { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp)) } } else null)
-                                }
-                            }
                         }
-                        if (visibleBooks.isEmpty()) {
-                            val noBooksYet = if (showSoldBooks) soldBooks.isEmpty() else books.isEmpty()
-                            EmptyState(
-                                title = when {
-                                    showSoldBooks && noBooksYet -> "Noch nichts verkauft"
-                                    noBooksYet -> "Noch keine Bücher"
-                                    else -> "Keine Treffer"
-                                },
-                                text = when {
-                                    showSoldBooks && noBooksYet -> "Halte ein Buch in „Meine Bücher“ gedrückt, um es als verkauft zu markieren."
-                                    noBooksYet -> "Scanne den Barcode auf der Rückseite, ein Titelblatt oder ein ganzes Regal. Du kannst ISBN oder Titel auch oben eintippen."
-                                    else -> "Kein Buch entspricht der Suche oder dem Filter."
-                                },
-                                action = when {
-                                    !noBooksYet && (statusFilter != BookListQuery.FILTER_ALL || searchInput.isNotBlank()) -> "Suche und Filter zurücksetzen" to { statusFilter = BookListQuery.FILTER_ALL; searchInput = "" }
-                                    else -> null
+                        LazyColumn(
+                            state = bookListState,
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            // Overview, Momox action and chips scroll away so long lists keep their space.
+                            item(key = LIST_HEADER_KEY) {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    if (books.isNotEmpty() || showSoldBooks) ListOverview(if (showSoldBooks) "Verkaufte Bücher" else "Meine Bücher", totals, showValue = !showSoldBooks)
+                                    if (!showSoldBooks && books.isNotEmpty()) {
+                                        if (isCheckingMomox) Card(colors = CardDefaults.cardColors(containerColor = colorScheme.secondaryContainer), modifier = Modifier.fillMaxWidth()) {
+                                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                Text("Momox-Prüfung · $momoxProgress von $momoxTotal", style = MaterialTheme.typography.titleMedium)
+                                                LinearProgressIndicator(progress = { if (momoxTotal > 0) momoxProgress / momoxTotal.toFloat() else 0f }, modifier = Modifier.fillMaxWidth())
+                                                checkRun?.pausedReason?.let { Text(it, color = colorScheme.error) }
+                                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                    if (checkRun?.pausedReason != null) OutlinedButton(onClick = { scope.launch { catchingOperation { MomoxCheckCoordinator.resume(context) } } }) { Text("Erneut versuchen") }
+                                                    TextButton(onClick = { scope.launch { catchingOperation { MomoxCheckCoordinator.cancel(context) } } }) { Text("Prüfung beenden") }
+                                                }
+                                            }
+                                        } else if (!selectionMode) FilledTonalButton(onClick = { momoxCheckDialogOpen = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                                            Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+                                            Text("Momox-Preise prüfen", style = MaterialTheme.typography.titleMedium)
+                                        }
+                                        momoxSummary?.let {
+                                            if (!isCheckingMomox) MomoxSummaryCard(it, summaryExpanded, { summaryExpanded = !summaryExpanded }) {
+                                                momoxSummary = null; dismissedSummaryRun = checkRun?.startedAt
+                                            }
+                                        }
+                                    }
+                                    if (!selectionMode && (if (showSoldBooks) soldBooks else books).isNotEmpty()) Row(
+                                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Box {
+                                            FilterChip(selected = sortMode != BookListQuery.SORT_RECENT, onClick = { sortMenuOpen = true },
+                                                label = { Text(BookListQuery.sortLabel(sortMode)) },
+                                                leadingIcon = { Icon(painterResource(R.drawable.ic_sort), contentDescription = "Sortierung", modifier = Modifier.size(18.dp)) })
+                                            DropdownMenu(expanded = sortMenuOpen, onDismissRequest = { sortMenuOpen = false }) {
+                                                BookListQuery.sorts.forEach { (key, label) ->
+                                                    DropdownMenuItem(text = { Text(label) }, onClick = { sortMode = key; sortMenuOpen = false },
+                                                        trailingIcon = if (key == sortMode) { { Icon(Icons.Filled.Check, contentDescription = "Ausgewählt") } } else null)
+                                                }
+                                            }
+                                        }
+                                        if (!showSoldBooks) BookListQuery.filters.forEach { (key, label) ->
+                                            FilterChip(selected = statusFilter == key, onClick = { statusFilter = key }, label = { Text(label) },
+                                                leadingIcon = if (statusFilter == key) { { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp)) } } else null)
+                                        }
+                                    }
                                 }
-                            )
-                        } else {
-                            LazyColumn(
-                                state = bookListState,
-                                modifier = Modifier.weight(1f),
-                                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
+                            }
+                            if (visibleBooks.isEmpty()) item(key = "empty") {
+                                val noBooksYet = if (showSoldBooks) soldBooks.isEmpty() else books.isEmpty()
+                                EmptyState(
+                                    title = when {
+                                        showSoldBooks && noBooksYet -> "Noch nichts verkauft"
+                                        noBooksYet -> "Noch keine Bücher"
+                                        else -> "Keine Treffer"
+                                    },
+                                    text = when {
+                                        showSoldBooks && noBooksYet -> "Halte ein Buch in „Meine Bücher“ gedrückt, um es als verkauft zu markieren."
+                                        noBooksYet -> "Scanne den Barcode auf der Rückseite, ein Titelblatt oder ein ganzes Regal. Du kannst ISBN oder Titel auch oben eintippen."
+                                        else -> "Kein Buch entspricht der Suche oder dem Filter."
+                                    },
+                                    action = when {
+                                        !noBooksYet && (statusFilter != BookListQuery.FILTER_ALL || searchInput.isNotBlank()) -> "Suche und Filter zurücksetzen" to { statusFilter = BookListQuery.FILTER_ALL; searchInput = "" }
+                                        else -> null
+                                    }
+                                )
+                            } else {
                                 items(visibleBooks, key = { it.id }) { book ->
                                     BookCard(
                                         book = book,
@@ -780,7 +792,8 @@ class MainActivity : ComponentActivity() {
                                         onOpen = { detailsBook = book },
                                         onEdit = { editingBook = book },
                                         onDelete = { deleteBook(book) },
-                                        onMomoxCheck = { runMomoxCheck(listOf(book)) }
+                                        onMomoxCheck = { runMomoxCheck(listOf(book)) },
+                                        onMarkSold = { markSold(listOf(book.id)) }
                                     )
                                 }
                             }
@@ -874,6 +887,8 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
+
+private const val LIST_HEADER_KEY = "list-header"
 
 @androidx.compose.runtime.Composable
 private fun EmptyState(title: String, text: String, action: Pair<String, () -> Unit>?) {

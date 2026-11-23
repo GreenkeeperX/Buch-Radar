@@ -74,11 +74,21 @@ class BookListQueryTest {
         assertEquals(1, totals.uncheckedCount)
     }
 
-    @Test fun isbnInputIsFormattedButTitlesAreNot() {
-        assertEquals("978-0-8044-2957-3", BookInputFormat.formatBookInput("9780804429573"))
-        assertEquals("Der Process", BookInputFormat.formatBookInput("Der Process"))
-        assertEquals("", BookInputFormat.formatBookInput(""))
+    @Test fun isbnInputIsParsedWithHyphensAndSpaces() {
+        assertEquals("9780140328721", BookInputFormat.parseIsbn("978-0-14-032872-1")?.toCompactString())
+        assertEquals("9780140328721", BookInputFormat.parseIsbn(" 978 0140 328721 ")?.toCompactString())
         assertNull(BookInputFormat.parseIsbn("9780804429574"))
+        assertNull(BookInputFormat.parseIsbn(""))
+        assertNull(BookInputFormat.parseIsbn("Der Process"))
+    }
+
+    @Test fun isbn13WithValidIsbn10PrefixParsesAsItself() {
+        // "9780140328" is itself a valid ISBN-10; earlier per-keystroke formatting turned it
+        // into "978-978-014-032-8" and mangled the rest of the input.
+        val typed = "9780140328721"
+        assertNotNull(BookInputFormat.parseIsbn(typed.take(10)))
+        assertEquals("9780140328721", BookInputFormat.parseIsbn(typed)?.toCompactString())
+        assertEquals("Der Process", BookInputFormat.autoFormatIsbn("Der Process"))
     }
 
     @Test fun messagesGetAppropriateTone() {

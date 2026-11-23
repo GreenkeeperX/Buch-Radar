@@ -147,7 +147,8 @@ internal fun BookCard(
     onOpen: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
-    onMomoxCheck: () -> Unit
+    onMomoxCheck: () -> Unit,
+    onMarkSold: () -> Unit
 ) {
     val scheme = MaterialTheme.colorScheme
     Card(
@@ -156,7 +157,7 @@ internal fun BookCard(
             onClick = { if (selectionMode) onSelect() else onOpen() },
             onLongClickLabel = "Buch auswählen", onLongClick = onLongSelect
         ),
-        colors = CardDefaults.cardColors(containerColor = if (selected) scheme.primaryContainer else scheme.surfaceContainerLow),
+        colors = CardDefaults.cardColors(containerColor = if (selected) scheme.surfaceContainerHighest else scheme.surfaceContainerLow),
         border = if (selected) BorderStroke(2.dp, scheme.primary) else null
     ) {
         Row(Modifier.padding(start = 12.dp, top = 12.dp, bottom = 12.dp, end = 4.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -167,7 +168,7 @@ internal fun BookCard(
                 book.author?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 Text(
                     (if (book.isbn.isBlank()) "ISBN fehlt" else "ISBN ${BookInputFormat.displayIsbn(book.isbn)}") + (book.publicationYear?.let { " · $it" } ?: ""),
-                    style = MaterialTheme.typography.labelLarge, color = scheme.onSurfaceVariant, maxLines = 1
+                    style = MaterialTheme.typography.labelLarge, color = scheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis
                 )
                 Spacer(Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -193,6 +194,8 @@ internal fun BookCard(
                             onClick = { menuOpen = false; onRestore() })
                         else DropdownMenuItem(text = { Text("Bei Momox prüfen") }, enabled = book.isbn.isNotBlank() && !checkQueued,
                             leadingIcon = { Icon(Icons.Filled.Refresh, null) }, onClick = { menuOpen = false; onMomoxCheck() })
+                        if (!isSold) DropdownMenuItem(text = { Text("Als verkauft markieren") }, leadingIcon = { Icon(painterResource(R.drawable.ic_sold), null) },
+                            onClick = { menuOpen = false; onMarkSold() })
                         DropdownMenuItem(text = { Text("Bearbeiten") }, leadingIcon = { Icon(Icons.Filled.Edit, null) }, onClick = { menuOpen = false; onEdit() })
                         HorizontalDivider()
                         DropdownMenuItem(text = { Text("Entfernen", color = scheme.error) }, leadingIcon = { Icon(Icons.Filled.Delete, null, tint = scheme.error) },
@@ -270,7 +273,7 @@ internal fun EditBookDialog(
         title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(value = isbn, onValueChange = { isbn = BookInputFormat.autoFormatIsbn(it) },
+                OutlinedTextField(value = isbn, onValueChange = { isbn = it },
                     label = { Text("ISBN (optional)") }, singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next))
                 OutlinedTextField(value = titleText, onValueChange = { titleText = it }, label = { Text("Titel") }, singleLine = true,

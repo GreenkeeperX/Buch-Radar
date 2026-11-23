@@ -14,6 +14,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.foundation.clickable
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
@@ -105,8 +109,8 @@ fun SettingsScreen(theme: String, onTheme: (String) -> Unit, onClose: () -> Unit
                         item { Text("Die Sicherung enthält deine Bücher und den Verkaufsstatus. Angebote werden nach dem Import neu geprüft.") }
                         item { OutlinedButton(onClick = { export.launch("buecher-radar.json") }, modifier = Modifier.fillMaxWidth()) { Text("Bücherliste sichern") } }
                         item { OutlinedButton(onClick = { import.launch(arrayOf("application/json", "text/plain")) }, modifier = Modifier.fillMaxWidth()) { Text("Sicherung importieren") } }
-                        item { HorizontalDivider(); TextButton(onClick = { log = AppLog.read(context); page = "log" }) { Text("Diagnose und Protokoll") } }
-                        item { TextButton(onClick = { page = "privacy" }) { Text("Datenschutz und Datenquellen") } }
+                        item { HorizontalDivider(); NavRow("Diagnose und Protokoll") { log = AppLog.read(context); page = "log" } }
+                        item { NavRow("Datenschutz und Datenquellen") { page = "privacy" } }
                         item { Text("Bücher-Radar ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", style = MaterialTheme.typography.bodyLarge) }
                     }
                     "log" -> {
@@ -149,10 +153,25 @@ private fun SwitchRow(label: String, checked: Boolean, onChange: (Boolean) -> Un
 @Composable
 private fun ChoiceMenu(label: String, choices: List<Pair<String, String>>, onChange: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
-    Box {
-        OutlinedButton(onClick = { open = true }) { Text("$label ▾", style = MaterialTheme.typography.bodyLarge) }
+    Box(Modifier.fillMaxWidth()) {
+        OutlinedButton(onClick = { open = true }, modifier = Modifier.fillMaxWidth()) {
+            Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+            Icon(androidx.compose.material.icons.Icons.Filled.ArrowDropDown, contentDescription = null)
+        }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            choices.forEach { (value, title) -> DropdownMenuItem(text = { Text(title) }, onClick = { onChange(value); open = false }) }
+            choices.forEach { (value, title) ->
+                DropdownMenuItem(text = { Text(title) }, onClick = { onChange(value); open = false },
+                    trailingIcon = if (title == label) { { Icon(androidx.compose.material.icons.Icons.Filled.Check, contentDescription = "Ausgewählt") } } else null)
+            }
         }
     }
+}
+
+@Composable
+private fun NavRow(label: String, onClick: () -> Unit) {
+    ListItem(
+        headlineContent = { Text(label, style = MaterialTheme.typography.bodyLarge) },
+        trailingContent = { Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
+    )
 }
