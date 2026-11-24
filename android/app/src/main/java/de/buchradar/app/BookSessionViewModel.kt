@@ -44,6 +44,7 @@ class BookSessionViewModel(application: Application) : AndroidViewModel(applicat
     val deletingBook = mutableStateOf<BookEntity?>(null)
     val pendingUndo = mutableStateOf<PendingUndo?>(null)
     val settingsOpen = mutableStateOf(false)
+    val saleOpen = mutableStateOf(false)
     val showSoldBooks = mutableStateOf(false)
     val selectionMode = mutableStateOf(false)
     val selectedIsbns = mutableStateOf<Set<String>>(emptySet())

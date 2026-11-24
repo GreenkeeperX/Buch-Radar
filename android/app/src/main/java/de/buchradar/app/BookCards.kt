@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -82,7 +83,7 @@ internal fun formatDateTime(millis: Long): String = SimpleDateFormat("dd.MM.yyyy
 
 /** Compact overview above the list: count and current total purchase value. */
 @Composable
-internal fun ListOverview(title: String, totals: BookListTotals, showValue: Boolean) {
+internal fun ListOverview(title: String, totals: BookListTotals, showValue: Boolean, onSell: (() -> Unit)? = null) {
     Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.titleLarge)
@@ -102,6 +103,9 @@ internal fun ListOverview(title: String, totals: BookListTotals, showValue: Bool
                     color = status.success, fontWeight = FontWeight.Bold)
                 Text("Ankauf für ${totals.availableCount} ${if (totals.availableCount == 1) "Buch" else "Bücher"}",
                     style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (onSell != null) FilledTonalButton(onClick = onSell, modifier = Modifier.padding(start = 8.dp).heightIn(min = 48.dp)) {
+                Text("Verkaufen")
             }
         }
     }

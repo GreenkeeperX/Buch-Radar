@@ -207,6 +207,7 @@ class MainActivity : ComponentActivity() {
                 var summaryExpanded by session.summaryExpanded
                 var dismissedSummaryRun by session.dismissedSummaryRun
                 var settingsOpen by session.settingsOpen
+                var saleOpen by session.saleOpen
                 var showSoldBooks by session.showSoldBooks
                 var selectionMode by session.selectionMode
                 var selectedIsbns by session.selectedIsbns
@@ -241,7 +242,7 @@ class MainActivity : ComponentActivity() {
                 // The snackbar host belongs to the list screen: while details or settings cover it, the
                 // undo waits instead of timing out unseen, and the 12 s start again once the list is back.
                 val pendingUndo = session.pendingUndo.value
-                val undoHostVisible = !settingsOpen && detailsBook == null
+                val undoHostVisible = !settingsOpen && !saleOpen && detailsBook == null
                 LaunchedEffect(pendingUndo, undoHostVisible) {
                     val undo = pendingUndo ?: return@LaunchedEffect
                     if (!undoHostVisible) return@LaunchedEffect
@@ -423,6 +424,11 @@ class MainActivity : ComponentActivity() {
 
                 if (settingsOpen) {
                     SettingsScreen(themeMode, { themeMode = it }, { settingsOpen = false })
+                    return@BuchRadarTheme
+                }
+                if (saleOpen) {
+                    SaleScreen(books, onClose = { saleOpen = false }, onRecheck = runMomoxCheck,
+                        onMarkSold = { ids -> saleOpen = false; markSold(ids) })
                     return@BuchRadarTheme
                 }
                 detailsBook?.let { original ->
@@ -796,7 +802,8 @@ class MainActivity : ComponentActivity() {
                             // Overview, Momox action and chips scroll away so long lists keep their space.
                             item(key = LIST_HEADER_KEY) {
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    if (books.isNotEmpty() || showSoldBooks) ListOverview(if (showSoldBooks) "Verkaufte Bücher" else "Meine Bücher", totals, showValue = !showSoldBooks)
+                                    if (books.isNotEmpty() || showSoldBooks) ListOverview(if (showSoldBooks) "Verkaufte Bücher" else "Meine Bücher", totals, showValue = !showSoldBooks,
+                                        onSell = if (!showSoldBooks && !selectionMode) ({ keyboard?.hide(); saleOpen = true }) else null)
                                     // Progress and controls follow the run, even if no active book is left.
                                     if (!showSoldBooks && (books.isNotEmpty() || isCheckingMomox || momoxSummary != null)) {
                                         if (isCheckingMomox) Card(colors = CardDefaults.cardColors(containerColor = colorScheme.secondaryContainer), modifier = Modifier.fillMaxWidth()) {
