@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package de.buchradar.app
 
 import androidx.activity.compose.BackHandler
@@ -16,6 +18,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.semantics
@@ -105,7 +108,10 @@ fun BookDetailsScreen(
                     InfoBanner("Letzte Prüfung fehlgeschlagen" + (book.lastError?.let { ": $it" } ?: "") + ". Das ältere Ergebnis bleibt erhalten.")
                 }
                 item {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // From 130 % font the two actions stack at full width; side by side their labels broke inside words.
+                    val stacked = LocalConfiguration.current.fontScale >= 1.3f
+                    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp), maxItemsInEachRow = if (stacked) 1 else 2) {
                         if (book.soldAt == null) FilledTonalButton(
                             enabled = book.isbn.isNotBlank() && !queued,
                             onClick = { scope.launch {
