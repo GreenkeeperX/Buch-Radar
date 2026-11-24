@@ -32,5 +32,10 @@ class MomoxResponseTest {
     @Test fun oddStatusCharactersAreStripped() {
         assertEquals(MomoxCatalog.unknownFormatMessage("<b>x</b>"), MomoxCatalog.unknownFormatMessage("bxb"))
     }
+    @Test fun productErrorMeansMomoxDoesNotKnowTheBook() {
+        val check = MomoxCatalog.validateOffer(isbn, MomoxOfferResponse("product_error", null, null, null))
+        assertEquals("UNKNOWN", check.status)
+        assertNull(check.priceCents)
+    }
     @Test fun knownNoOffer() { assertEquals("NOT_AVAILABLE", MomoxCatalog.validateOffer(isbn, MomoxOfferResponse("no_offer", null, null, null)).status) }
 }

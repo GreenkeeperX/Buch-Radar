@@ -93,6 +93,9 @@ fun BookDetailsScreen(
                         }
                     }
                 }
+                if (book.isbn.isNotBlank() && book.momoxStatus == "UNKNOWN" && book.lastCheckedAt != null && book.lastAttemptStatus != "ERROR") item {
+                    InfoBanner("Momox kann diese ISBN keinem Artikel zuordnen. Prüfe, ob ISBN und Ausgabe stimmen; sonst kauft Momox dieses Buch nicht an.")
+                }
                 if (book.lastAttemptStatus == "ERROR") item {
                     InfoBanner("Letzte Prüfung fehlgeschlagen" + (book.lastError?.let { ": $it" } ?: "") + ". Das ältere Ergebnis bleibt erhalten.")
                 }

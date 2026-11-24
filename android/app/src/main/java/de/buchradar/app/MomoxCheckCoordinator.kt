@@ -134,8 +134,9 @@ object MomoxCheckCoordinator {
             dao.saveRun(run.copy(
                 completed = run.completed + 1,
                 available = run.available + if (valid && status == "AVAILABLE") 1 else 0,
-                unavailable = run.unavailable + if (valid && status == "NOT_AVAILABLE") 1 else 0,
-                failed = run.failed + if (valid && status !in listOf("AVAILABLE", "NOT_AVAILABLE")) 1 else 0,
+                // "Bei Momox unbekannt" is an answer without buy-back, not a failed check.
+                unavailable = run.unavailable + if (valid && status in listOf("NOT_AVAILABLE", "UNKNOWN")) 1 else 0,
+                failed = run.failed + if (valid && status !in listOf("AVAILABLE", "NOT_AVAILABLE", "UNKNOWN")) 1 else 0,
                 valueCents = run.valueCents + if (valid && status == "AVAILABLE") (price ?: 0).toLong() else 0,
                 finishedAt = if (dao.pendingCount() == 0) System.currentTimeMillis() else null
             ))

@@ -113,6 +113,9 @@ object MomoxCatalog {
             }
             "no_offer" -> MomoxCheck("NOT_AVAILABLE", null, response.product?.title)
             "unknown" -> MomoxCheck("UNKNOWN", null, response.product?.title)
+            // Seen on the device (2026-11-24): Momox cannot match this ISBN to an article it buys.
+            // A final answer for this book, like "unknown"; no retry, no pause.
+            "product_error" -> MomoxCheck("UNKNOWN", null, response.product?.title)
             // One odd answer marks only this book; the coordinator pauses after several in a row.
             else -> throw MomoxCheckException(unknownFormatMessage(response.status), retryable = false, unknownFormat = true)
         }
