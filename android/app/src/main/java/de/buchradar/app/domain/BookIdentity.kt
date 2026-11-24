@@ -15,7 +15,9 @@ object BookIdentity {
     )
 
     // Characters that barcode stripes and OCR confusions produce in the printed EAN line.
-    private val barcodeRun = Regex("[0-9OoIl|!gSB\"'`]+(?: [0-9OoIl|!gSB\"'`]+)*")
+    // One character class including the space: a repeated group here recursed per repetition in
+    // java.util.regex and overflowed the stack on long stripe noise.
+    private val barcodeRun = Regex("[0-9OoIl|!gSB\"'` ]+")
 
     // Never join digits across lines, words or separate numeric fields. Ambiguous pages
     // containing several valid ISBNs require the user to choose an edition.
@@ -37,7 +39,7 @@ object BookIdentity {
      */
     internal fun barcodeLineIsbns(line: String): List<String> = barcodeRun.findAll(line).flatMap { run ->
         if (run.value.count(Char::isDigit) < 9) return@flatMap emptySequence()
-        val groups = run.value.split(' ')
+        val groups = run.value.split(' ').filter(String::isNotEmpty)
         fun mapped(group: String, stripesAsOne: Boolean) = buildString {
             for (c in group) when (c) {
                 in '0'..'9' -> append(c)
