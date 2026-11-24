@@ -31,6 +31,22 @@ class SpineSegmentationTest {
         assertTrue(edge.at(0f, height) < edge.at(height.toFloat(), height))
     }
 
+    @Test fun edgeIsFoundWhenItsDirectionChangesAlongTheSpine() {
+        // The left spine is light at the top, matches its grey neighbour in the middle and is dark
+        // at the bottom: the colour step changes sign along the boundary, so a signed median is zero.
+        val width = 320; val height = 240
+        val pixels = IntArray(width * height) { index ->
+            val x = index % width; val y = index / width
+            when {
+                x >= 160 -> 0xff808080.toInt()
+                y < height * .45f -> 0xffd8d8d8.toInt()
+                y < height * .65f -> 0xff808080.toInt()
+                else -> 0xff282828.toInt()
+            }
+        }
+        assertTrue(spineEdges(pixels, width, height).any { abs(it.x - 160) <= 3 })
+    }
+
     @Test fun flatImageDoesNotInventBooks() {
         assertTrue(spineEdges(IntArray(320 * 240) { 0xff334455.toInt() }, 320, 240).isEmpty())
         assertTrue(spineEdges(IntArray(3), 320, 240).isEmpty())

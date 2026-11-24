@@ -649,10 +649,17 @@ class MainActivity : ComponentActivity() {
                                                 shelfEditText = group.query
                                             }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.Edit, null, Modifier.padding(end = 6.dp)); Text("Text ändern") }
                                         }
-                                        TextButton(onClick = {
-                                            session.shelfReview.postpone(group.id)
-                                            if (shelfEditQuery == group.id) shelfEditQuery = null
-                                        }) { Text("Für später zurückstellen") }
+                                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                            TextButton(onClick = {
+                                                session.shelfReview.postpone(group.id)
+                                                if (shelfEditQuery == group.id) shelfEditQuery = null
+                                            }) { Text("Für später zurückstellen") }
+                                            // A misread spine is not a book: drop it without adding anything.
+                                            TextButton(onClick = {
+                                                session.shelfReview.complete(group.id)
+                                                if (shelfEditQuery == group.id) shelfEditQuery = null
+                                            }) { Text("Verwerfen", color = colorScheme.error) }
+                                        }
                                     }
                                 }
                             }

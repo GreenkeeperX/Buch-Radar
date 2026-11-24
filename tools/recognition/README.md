@@ -94,6 +94,27 @@ Die Fehlschläge vorher: als Punkt gelesener Bindestrich („3-12.5 17154-7“) 
 Barcode-Striche in der Klarschriftzeile („9ll783125171541“). Drei Fotos sind kein
 Qualitätsnachweis; weitere ungesehene ISBN-Fotos ergänzen.
 
+## Buchkanten nach Zeilenanteil (nach 0.14)
+
+Echte Regalfotos lieferten oft „0 Bildregionen“: Der vorzeichenbehaftete Median der
+Farbdifferenz hob sich bei ähnlich dunklen Nachbarrücken oder Hell/Dunkel-Wechseln entlang
+eines Rückens auf. Jetzt zählt der Anteil der abgetasteten Zeilen mit einem deutlichen
+Farbsprung, und jeder Rücken wird mit etwas Rand gelesen, damit Anfangsbuchstaben nicht
+abgeschnitten werden. Gemessen auf einem Pixel 9a (deviceTest-App), Regionen-Durchgang,
+sauber gelesene Rücken:
+
+| Satz | 1280 px | 1920 px | 2560 px |
+|---|---:|---:|---:|
+| Öffentliches Regalfoto, vorher | 4/20 | 7/20 | 12/20 |
+| Öffentliches Regalfoto, nachher | 3/20 | 7/20 | 13/20 |
+| 4 private Handyfotos (32 Rücken), vorher | 2/32 | 2/32 | 2/32 |
+| 4 private Handyfotos (32 Rücken), nachher | 7/32 | 8/32 | 6/32 |
+
+Vorher fand der Regionen-Durchgang in drei der vier privaten Fotos keine einzige Region,
+nachher 7–13 je Foto. Im öffentlichen Foto teilt der Kantenumbau einzelne Rücken häufiger
+(2–5 statt 0 aufgeteilte Rücken). Private Fotos und ihre Sollwerte bleiben außerhalb des
+Repositorys.
+
 Rohmetriken ohne OCR-Texte: `baseline-0.13.json` und `results-0.14.json`.
 Die aktuellen Schnitte sind heuristisch; mehrere Regalreihen, schräg gestapelte
 Bücher und ein unabhängiger Testsatz sind weitere Aufgaben.
