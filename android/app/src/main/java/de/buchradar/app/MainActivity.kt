@@ -163,6 +163,7 @@ class MainActivity : ComponentActivity() {
                 }
                 val database = remember(context) { BuchRadarDatabase.get(context) }
                 val dao = remember(database) { database.bookDao() }
+                LaunchedEffect(Unit) { catchingOperation { MomoxCheckCoordinator.resumeIfAccessArrived(context) } }
                 val books by dao.observeAll().collectAsState(initial = emptyList())
                 val soldBooks by dao.observeSold().collectAsState(initial = emptyList())
                 val pendingIsbns by dao.observePendingIsbns().collectAsState(initial = emptyList())

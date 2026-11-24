@@ -42,6 +42,8 @@ private interface MomoxApi {
 }
 
 object MomoxCatalog {
+    /** Pause reason of a build without access; a later build with access resumes such a run. */
+    const val MISSING_ACCESS = "Momox-Zugang ist für diesen Build nicht eingerichtet."
     private const val TAG = "BuchRadar.Momox"
     private val api: MomoxApi by lazy {
         val moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
@@ -53,7 +55,7 @@ object MomoxCatalog {
     }
 
     suspend fun check(isbn: String): MomoxCheck {
-        if (BuildConfig.MOMOX_API_TOKEN.isBlank()) throw MomoxCheckException("Momox-Zugang ist für diesen Build nicht eingerichtet.", null, retryable = false, pauseQueue = true)
+        if (BuildConfig.MOMOX_API_TOKEN.isBlank()) throw MomoxCheckException(MISSING_ACCESS, null, retryable = false, pauseQueue = true)
         val startedAt = SystemClock.elapsedRealtime()
         val response = try {
             api.offer(BookIdentity.canonicalIsbn(isbn) ?: throw IllegalArgumentException("Ungültige ISBN"), BuildConfig.MOMOX_API_TOKEN)

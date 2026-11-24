@@ -13,7 +13,9 @@ import de.buchradar.app.data.BuchRadarDatabase
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
+import org.junit.After
 import org.junit.Assume.assumeTrue
+import org.junit.Before
 import org.junit.Test
 import java.io.File
 import kotlin.math.max
@@ -45,9 +47,21 @@ class AccessibilityAuditTest {
             lastAttemptStatus = "ERROR", lastAttemptAt = System.currentTimeMillis(), id = "a11y-test-3")
     )
 
+    /** The font size before the run, kept on disk so an aborted run is repaired by the next one or by @After. */
+    private val savedScale = File(out, "font-scale-before.txt")
+
+    @Before fun repairAbortedRun() { restoreFontScale() }
+
+    @After fun restoreFontScale() {
+        if (!savedScale.exists()) return
+        shell("settings put system font_scale ${savedScale.readText().trim()}")
+        savedScale.delete()
+    }
+
     @Test fun auditScreensAtSeveralFontSizes() {
         assumeTrue(InstrumentationRegistry.getArguments().getString("a11yAudit") == "true")
-        val originalScale = shell("settings get system font_scale").trim().takeIf { it.isNotEmpty() && it != "null" } ?: "1.0"
+        val originalScale = shell("settings get system font_scale").trim().takeIf { it.matches(Regex("[0-9.]+")) } ?: "1.0"
+        savedScale.writeText(originalScale)
         val dao = BuchRadarDatabase.get(context).bookDao()
         val inserted = runBlocking { seeded.filter { dao.insert(it) != -1L }.map { it.id } }
         val report = JSONArray()
@@ -56,6 +70,7 @@ class AccessibilityAuditTest {
                 shell("settings put system font_scale $scale")
                 SystemClock.sleep(1_500)
                 ActivityScenario.launch(MainActivity::class.java).use {
+                    showList()
                     waitFor { node { n -> n.text?.toString() == seeded[0].title } }
                     report.put(audit("liste", scale))
                     click { n -> n.text?.toString() == seeded[0].title }
@@ -69,10 +84,25 @@ class AccessibilityAuditTest {
                 }
             }
         } finally {
-            shell("settings put system font_scale $originalScale")
+            restoreFontScale()
             runBlocking { inserted.forEach { dao.deleteBook(it) } }
             File(out, "report.json").writeText(report.toString(2))
         }
+    }
+
+    /**
+     * The app restores a screen that was open before (e.g. settings); go back to the list first.
+     * Back is only pressed on a recognised inner screen, never on the list itself.
+     */
+    private fun showList() {
+        val inner = setOf("Zurück", "Zurück zur Liste", "Weitere Aktionen")
+        repeat(5) {
+            waitFor { node { n -> n.contentDescription?.toString() == "Einstellungen öffnen" || n.contentDescription?.toString() in inner } }
+            if (node { n -> n.contentDescription?.toString() == "Einstellungen öffnen" } != null) return
+            instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+            SystemClock.sleep(800)
+        }
+        waitFor { node { n -> n.contentDescription?.toString() == "Einstellungen öffnen" } }
     }
 
     private fun audit(screen: String, scale: String): JSONObject {

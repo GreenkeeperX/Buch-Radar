@@ -32,6 +32,12 @@ object MomoxCheckCoordinator {
         MomoxWorkScheduler.drain(context)
     }
 
+    /** A run paused only because an earlier build had no access continues once this build has one. */
+    suspend fun resumeIfAccessArrived(context: Context) {
+        if (BuildConfig.MOMOX_API_TOKEN.isBlank()) return
+        if (BuchRadarDatabase.get(context).bookDao().getRun()?.pausedReason == MomoxCatalog.MISSING_ACCESS) resume(context)
+    }
+
     suspend fun resume(context: Context) {
         val db = BuchRadarDatabase.get(context)
         db.withTransaction {
