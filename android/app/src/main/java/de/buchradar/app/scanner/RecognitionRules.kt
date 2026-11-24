@@ -42,15 +42,22 @@ internal data class OcrPiece(val text: String, val left: Float, val top: Float, 
     val y get() = (top + bottom) / 2
     val width get() = (right - left).coerceAtLeast(1f)
     val height get() = (bottom - top).coerceAtLeast(1f)
+    val isVertical get() = abs(angle % 180) in 55f..125f
 }
+
+// Across a large blank part of a spine, require most of BOTH boxes to occupy the same column.
+private const val DISTANT_COLUMN_OVERLAP = .65f
 
 /** Spatial groups retain duplicate text on different spines. No global text deduplication. */
 internal fun groupSpines(pieces: List<OcrPiece>, imageWidth: Int, imageHeight: Int): List<List<OcrPiece>> {
     fun compatible(a: OcrPiece, b: OcrPiece): Boolean {
-        val overlap = (minOf(a.right, b.right) - maxOf(a.left, b.left)).coerceAtLeast(0f) / minOf(a.width, b.width)
+        val sharedWidth = (minOf(a.right, b.right) - maxOf(a.left, b.left)).coerceAtLeast(0f)
         val gapY = maxOf(0f, maxOf(a.top, b.top) - minOf(a.bottom, b.bottom))
-        if (gapY > imageHeight * .35f) return false
-        val vertical = abs(a.angle % 180) in 55f..125f || abs(b.angle % 180) in 55f..125f
+        if (gapY > imageHeight * .35f) {
+            return a.isVertical && b.isVertical && sharedWidth >= DISTANT_COLUMN_OVERLAP * maxOf(a.width, b.width)
+        }
+        val overlap = sharedWidth / minOf(a.width, b.width)
+        val vertical = a.isVertical || b.isVertical
         val aligned = overlap >= if (vertical) .65f else .55f
         val centered = abs(a.x - b.x) <= minOf(a.width, b.width) * .25f
         // Do not join horizontally adjacent words across unknown book boundaries.

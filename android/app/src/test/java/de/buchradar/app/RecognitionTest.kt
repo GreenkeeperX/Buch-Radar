@@ -57,6 +57,21 @@ class RecognitionTest {
         assertTrue(groups.all { group -> group.any { it.text == "Hugo" } })
     }
 
+    @Test fun distantVerticalAuthorAndTitleShareOnlyTheirOwnColumn() {
+        val author = OcrPiece("Tom Reiss", 20f, 10f, 40f, 65f, -90f)
+        val title = OcrPiece("Der Orientalist", 23f, 340f, 39f, 430f, 270f)
+        val neighbour = title.copy(text = "Nachbar", left = 36f, right = 54f)
+        val groups = groupSpines(listOf(title, neighbour, author), 400, 450)
+        assertEquals(listOf(setOf(author, title), setOf(neighbour)), groups.map { it.toSet() })
+    }
+
+    @Test fun aDistantHorizontalOrMuchWiderBoxCannotBridgeTwoBooks() {
+        val title = OcrPiece("Titel", 20f, 340f, 40f, 430f, 90f)
+        val author = title.copy(text = "Autor", top = 10f, bottom = 60f)
+        assertEquals(2, groupSpines(listOf(title, author.copy(angle = 0f)), 400, 450).size)
+        assertEquals(2, groupSpines(listOf(title, author.copy(right = 90f)), 400, 450).size)
+    }
+
     @Test fun spineStutterIsRemovedButDistinctLinesStay() {
         assertEquals("NANSEN\nIN NACHT UND EIS", cleanSpineText("NANSEN NANSEN\nIN NACHT UND EIS"))
         assertEquals("Transhimalaja", cleanSpineText("Transhimalaa Transhimalaja"))
