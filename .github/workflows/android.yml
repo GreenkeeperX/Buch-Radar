@@ -10,8 +10,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Reject access values, keys and local paths
         run: sh tools/check-secrets.sh
+      # Every new commit, so a value added and removed again later is still refused.
+      - name: Check each pushed commit
+        env:
+          BEFORE: ${{ github.event.before }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [ -n "$BASE" ]; then range="$BASE..HEAD"
+          elif [ -n "$BEFORE" ] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then range="$BEFORE..HEAD"
+          else range="origin/main..HEAD"; fi
+          sh tools/check-secrets.sh --range "$range"
   verify:
     runs-on: ubuntu-latest
     steps:
