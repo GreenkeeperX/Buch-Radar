@@ -1,5 +1,13 @@
 package de.buchradar.app
 
+import kotlinx.coroutines.withTimeoutOrNull
+
+import androidx.compose.foundation.verticalScroll
+
+import androidx.compose.ui.platform.LocalConfiguration
+
+import android.content.res.Configuration
+
 import android.Manifest
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -149,6 +157,7 @@ class MainActivity : ComponentActivity() {
                 val pendingIsbns by dao.observePendingIsbns().collectAsState(initial = emptyList())
                 val pendingSet = remember(pendingIsbns) { pendingIsbns.toSet() }
                 val bookListState = rememberLazyListState()
+                val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
                 val session: BookSessionViewModel = viewModel()
                 val scope = session.viewModelScope
                 val uiScope = rememberCoroutineScope()
@@ -222,7 +231,11 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(pendingUndo) {
                     val undo = pendingUndo ?: return@LaunchedEffect
                     snackbar.currentSnackbarData?.dismiss()
-                    val result = snackbar.showSnackbar(undo.text, actionLabel = "Rückgängig", withDismissAction = true, duration = SnackbarDuration.Long)
+                    // Undo is the only way back for a removed book: keep it 12 s, longer than the
+                    // short default some accessibility settings impose on "Long".
+                    val result = withTimeoutOrNull(12_000) {
+                        snackbar.showSnackbar(undo.text, actionLabel = "Rückgängig", withDismissAction = true, duration = SnackbarDuration.Indefinite)
+                    } ?: run { snackbar.currentSnackbarData?.dismiss(); SnackbarResult.Dismissed }
                     if (session.pendingUndo.value === undo) session.pendingUndo.value = null
                     if (result == SnackbarResult.ActionPerformed) scope.launch {
                         val outcome = catchingOperation {
@@ -409,9 +422,11 @@ class MainActivity : ComponentActivity() {
                 Scaffold(
                     snackbarHost = { SnackbarHost(snackbar) },
                     floatingActionButton = {
+                        // Collapses to the camera icon once the list scrolls and in landscape, so it covers less.
                         if (onListScreen && !showSoldBooks && !selectionMode && searchInput.isBlank()) ExtendedFloatingActionButton(
+                            expanded = !landscape && bookListState.firstVisibleItemIndex == 0,
                             onClick = { if (!isSearching) openScanner(ScannerMode.AUTOMATIC) },
-                            icon = { Icon(painterResource(R.drawable.ic_camera), contentDescription = null) },
+                            icon = { Icon(painterResource(R.drawable.ic_camera), contentDescription = "Buch oder Regal scannen") },
                             text = { Text("Buch oder Regal scannen", style = MaterialTheme.typography.titleMedium) }
                         )
                     },
@@ -681,7 +696,9 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     } else Column(Modifier.fillMaxSize().padding(padding)) {
-                        Column(Modifier.padding(horizontal = 16.dp).padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        // In landscape the fixed area may take at most 40 % of the height and scrolls itself.
+                        Column(Modifier.then(if (landscape) Modifier.heightIn(max = (LocalConfiguration.current.screenHeightDp * .4f).dp).verticalScroll(rememberScrollState()) else Modifier)
+                            .padding(horizontal = 16.dp).padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             if (!selectionMode) OutlinedTextField(
                                     value = searchInput,
                                     onValueChange = { searchInput = it; coverFrame = null; visualCoverTest = false },
@@ -717,11 +734,11 @@ class MainActivity : ComponentActivity() {
                                     Icon(Icons.Filled.Edit, null, Modifier.padding(end = 6.dp)); Text("Buch manuell erfassen")
                                 }
                                 if (shelfState.groups.isNotEmpty() || shelfError != null) Surface(
-                                    color = colorScheme.tertiaryContainer, contentColor = colorScheme.onTertiaryContainer,
+                                    color = colorScheme.surfaceContainerHigh, contentColor = colorScheme.onSurface,
                                     shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Row(Modifier.padding(start = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(painterResource(R.drawable.ic_shelf), contentDescription = null)
+                                        Icon(painterResource(R.drawable.ic_shelf), contentDescription = null, tint = colorScheme.tertiary)
                                         Text(if (shelfError != null) "Gespeicherte Regal-Funde" else "${shelfState.groups.size} Regal-Funde offen",
                                             Modifier.weight(1f).padding(horizontal = 10.dp), style = MaterialTheme.typography.bodyLarge)
                                         TextButton(enabled = !singleSearchBusy, onClick = { shelfReviewOpen = true; message = null; session.shelfReview.resume() }) {

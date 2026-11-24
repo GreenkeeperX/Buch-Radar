@@ -119,27 +119,30 @@ internal fun MomoxActionRow(summary: MomoxSummary?, expanded: Boolean, canCheck:
     Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             if (summary != null) {
-                Row(Modifier.weight(1f).clickable(onClickLabel = if (expanded) "Weniger anzeigen" else "Ankaufwert anzeigen", onClick = onToggle)
-                    .padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                // Label and values on two short lines, so the row never wraps mid-phrase.
+                Column(Modifier.weight(1f).clickable(onClickLabel = if (expanded) "Weniger anzeigen" else "Ankaufwert anzeigen", onClick = onToggle)
+                    .padding(vertical = 4.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Letzte Prüfung", style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
+                        Icon(if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown, contentDescription = null,
+                            tint = scheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                    }
                     Text(
                         buildAnnotatedString {
-                            append("Letzte Prüfung: ")
                             withStyle(SpanStyle(color = if (summary.available > 0) status.success else scheme.onSurfaceVariant, fontWeight = FontWeight.Bold)) {
                                 append("${summary.available} Ankauf")
                             }
-                            append(" · ${summary.unavailable} kein Ankauf")
+                            append(" · ${summary.unavailable} ohne")
                             if (summary.errors > 0) withStyle(SpanStyle(color = scheme.error, fontWeight = FontWeight.Bold)) { append(" · ${summary.errors} Fehler") }
                         },
-                        style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant, modifier = Modifier.weight(1f, fill = false)
+                        style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis
                     )
-                    Icon(if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown, contentDescription = null,
-                        tint = scheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
                 }
                 IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, contentDescription = "Ergebnis ausblenden", tint = scheme.onSurfaceVariant) }
             } else Text("Ankaufpreise für deine Bücher abfragen", Modifier.weight(1f),
                 style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
             if (canCheck) FilledTonalButton(onClick = onCheck, contentPadding = PaddingValues(horizontal = 14.dp)) {
-                Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp).padding(end = 0.dp))
+                Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
                 Text("Momox prüfen")
             }
