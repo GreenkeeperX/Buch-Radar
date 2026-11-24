@@ -3,6 +3,9 @@ package de.buchradar.app.data
 import androidx.room.*
 import kotlinx.coroutines.flow.Flow
 
+/** [BookDao.updateBook] result: the new ISBN belongs to another entry. */
+const val ISBN_TAKEN = -1
+
 @Dao
 interface BookDao {
     @Query("SELECT * FROM books WHERE soldAt IS NULL ORDER BY createdAt DESC")
@@ -49,9 +52,15 @@ interface BookDao {
         isbn = :newIsbn, title = :title, author = :author WHERE id = :id""")
     suspend fun updateBookRow(id: String, newIsbn: String, title: String?, author: String?): Int
 
+    /**
+     * Edits a book. Returns 1 on success, 0 if the row is gone and [ISBN_TAKEN] if another row
+     * already has [newIsbn]. The duplicate check runs in the same transaction as the write, so a
+     * scan finishing in between cannot leave two rows with one ISBN.
+     */
     @Transaction
     suspend fun updateBook(id: String, newIsbn: String, title: String?, author: String?): Int {
         val original = findById(id) ?: return 0
+        if (newIsbn.isNotBlank() && newIsbn != original.isbn && findByIsbn(newIsbn)?.let { it.id != id } == true) return ISBN_TAKEN
         if (original.isbn != newIsbn && pendingFor(original.isbn) != null) {
             removePending(original.isbn)
             getRun()?.takeIf { it.finishedAt == null }?.let { run ->

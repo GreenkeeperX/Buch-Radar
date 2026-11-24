@@ -27,6 +27,23 @@ class DatabaseRegressionTest {
         } finally { db.close() }
     }
 
+    @Test fun editRefusesAnIsbnThatAnotherEntryAlreadyHas() = runBlocking {
+        val db = memory()
+        try {
+            val dao = db.bookDao()
+            val other = BookEntity("9780140328721", "Vorhanden", null)
+            val edited = BookEntity("9780804429573", "Alt", "Autor")
+            dao.insert(other); dao.insert(edited)
+            dao.enqueue(PendingCheck(edited.isbn, edited.createdAt, 1))
+            assertEquals(ISBN_TAKEN, dao.updateBook(edited.id, other.isbn, "Neu", null))
+            val unchanged = dao.findById(edited.id)!!
+            assertEquals("9780804429573", unchanged.isbn); assertEquals("Alt", unchanged.title)
+            assertEquals(1, dao.pendingCount())
+            assertEquals(1, dao.countWithIsbn(other.isbn))
+            assertEquals(1, dao.updateBook(edited.id, edited.isbn, "Neu", null))
+        } finally { db.close() }
+    }
+
     @Test fun networkErrorPreservesLastOffer() = runBlocking {
         val db = memory()
         try {

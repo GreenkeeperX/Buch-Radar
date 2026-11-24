@@ -23,7 +23,9 @@ object BookIdentity {
         val direct = isbnPattern.findAll(line)
             .mapNotNull { match -> canonicalIsbn(match.value.filter { it.isDigit() || it == 'X' || it == 'x' }.uppercase()) }
             .toList()
-        direct.ifEmpty { barcodeLineIsbns(line) }.asSequence()
+        // A line can hold a printed ISBN and a barcode line of another edition; keep both, so
+        // several different ISBNs stay ambiguous instead of silently picking the first.
+        (direct + barcodeLineIsbns(line)).asSequence()
     }.distinct().toList()
 
     /**

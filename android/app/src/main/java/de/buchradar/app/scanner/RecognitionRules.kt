@@ -128,4 +128,5 @@ private val publisherWords = setOf(
  * that is not just a publisher or place ("Hanser", "dtv !" alone are not books).
  */
 internal fun isUsefulSpineText(text: String): Boolean =
-    foldOcr(text).split(' ').any { word -> word.count(Char::isLetter) >= 4 && word !in publisherWords }
+    foldOcr(text).split(' ').any { word -> word.count(Char::isLetter) >= 4 && word !in publisherWords } ||
+        de.buchradar.app.domain.BookIdentity.isbnsInText(text).isNotEmpty()

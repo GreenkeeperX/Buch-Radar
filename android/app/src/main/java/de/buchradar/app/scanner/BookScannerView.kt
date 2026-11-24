@@ -193,10 +193,12 @@ fun BookScannerView(
                             acc
                         }
                         val groups = groupSpines(pieces, image.width, image.height)
-                        val found = groups.map(::spineText).filter(::isUsefulSpineText)
                         val looksShelf = groups.size >= 3 && groups.count { group -> group.any { abs(it.angle % 180) in 55f..125f } } >= 2
                         shelfVotes = (shelfVotes + if (looksShelf) 1 else -1).coerceIn(-4, 4)
                         val isShelf = actualMode == ScannerMode.SHELF || actualMode == ScannerMode.AUTOMATIC && shelfVotes >= 3
+                        // Publisher and fragment filtering only applies to shelves: a single book whose
+                        // readable text is just "ISBN 978…" must still reach the ISBN recognition.
+                        val found = groups.map(::spineText).filter { if (isShelf) isUsefulSpineText(it) else it.isNotBlank() }
                         val text = if (isShelf) found.joinToString("\n") else found.joinToString("\n").take(2_000)
                         val edges = sample.indices.filter { it % 64 in 1..62 && it / 64 in 1..62 }
                             .map { abs(4 * sample[it] - sample[it-1] - sample[it+1] - sample[it-64] - sample[it+64]) }.average()
@@ -319,34 +321,36 @@ private suspend fun readShelfWithStill(context: android.content.Context, capture
 }
 
 /** Takes one picture, upright and scaled to [maxSide]; null on error or after four seconds. */
-private suspend fun captureStill(context: android.content.Context, capture: ImageCapture, maxSide: Int): Bitmap? {
-    val proxy = withTimeoutOrNull(4_000) {
-        suspendCancellableCoroutine<ImageProxy?> { continuation ->
+private suspend fun captureStill(context: android.content.Context, capture: ImageCapture, maxSide: Int): Bitmap? =
+    // The picture is converted and its camera buffer released inside the timeout block: a proxy
+    // handed over just before a timeout or cancellation must never be left open.
+    withTimeoutOrNull(4_000) {
+        val proxy = suspendCancellableCoroutine<ImageProxy?> { continuation ->
             capture.takePicture(ContextCompat.getMainExecutor(context), object : ImageCapture.OnImageCapturedCallback() {
                 override fun onCaptureSuccess(image: ImageProxy) {
-                    // A late picture after timeout or closing must still be released.
-                    if (continuation.isActive) continuation.resume(image) else image.close()
+                    // A late picture after timeout or closing must still be released, also when the
+                    // waiting coroutine is cancelled after the hand-over.
+                    if (continuation.isActive) continuation.resume(image) { _ -> image.close() } else image.close()
                 }
                 override fun onError(exception: ImageCaptureException) {
                     AppLog.add(context, "Regal-Foto fehlgeschlagen (${exception.imageCaptureError})")
                     if (continuation.isActive) continuation.resume(null)
                 }
             })
-        }
-    } ?: return null
-    return try {
-        val raw = proxy.toBitmap()
-        val scale = minOf(1f, maxSide.toFloat() / maxOf(raw.width, raw.height))
-        val matrix = Matrix().apply { postRotate(proxy.imageInfo.rotationDegrees.toFloat()); postScale(scale, scale) }
-        val upright = Bitmap.createBitmap(raw, 0, 0, raw.width, raw.height, matrix, true)
-        if (upright !== raw) raw.recycle()
-        upright
-    } catch (error: Exception) {
-        if (error is CancellationException) throw error
-        AppLog.add(context, "Regal-Foto nicht lesbar (${error.javaClass.simpleName})")
-        null
-    } finally { proxy.close() }
-}
+        } ?: return@withTimeoutOrNull null
+        try {
+            val raw = proxy.toBitmap()
+            val scale = minOf(1f, maxSide.toFloat() / maxOf(raw.width, raw.height))
+            val matrix = Matrix().apply { postRotate(proxy.imageInfo.rotationDegrees.toFloat()); postScale(scale, scale) }
+            val upright = Bitmap.createBitmap(raw, 0, 0, raw.width, raw.height, matrix, true)
+            if (upright !== raw) raw.recycle()
+            upright
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            AppLog.add(context, "Regal-Foto nicht lesbar (${error.javaClass.simpleName})")
+            null
+        } finally { proxy.close() }
+    }
 
 /**
  * Mean brightness change per sample (0–255) still counted as a steady image. 8 was too strict

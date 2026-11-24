@@ -121,6 +121,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import de.buchradar.app.data.BookEntity
+import de.buchradar.app.data.ISBN_TAKEN
 import de.buchradar.app.data.BuchRadarDatabase
 import de.buchradar.app.domain.BookIdentity
 import de.buchradar.app.domain.BookInputFormat
@@ -954,22 +955,16 @@ class MainActivity : ComponentActivity() {
                             if (parsed == null && isbnText.isNotBlank()) return@EditBookDialog "Bitte eine gültige ISBN eingeben oder das Feld leer lassen."
                             if (titleText.isBlank() && parsed == null) return@EditBookDialog "Bitte einen Titel eingeben."
                             val newIsbn = parsed?.toCompactString().orEmpty()
-                            val duplicate = if (newIsbn.isNotBlank()) dao.findByIsbn(newIsbn) else null
-                            if (duplicate != null && duplicate.id != book.id && newIsbn != book.isbn) {
-                                "Diese ISBN ist bereits einem anderen Eintrag zugeordnet."
-                            } else {
-                                val changed = dao.updateBook(
-                                    id = book.id,
-                                    newIsbn = newIsbn,
-                                    title = titleText.trim().takeIf(String::isNotEmpty),
-                                    author = authorText.trim().takeIf(String::isNotEmpty)
-                                )
-                                if (changed == 1) {
-                                    message = "Eintrag aktualisiert."
-                                    null
-                                } else {
-                                    "Der Eintrag konnte nicht aktualisiert werden."
-                                }
+                            val changed = dao.updateBook(
+                                id = book.id,
+                                newIsbn = newIsbn,
+                                title = titleText.trim().takeIf(String::isNotEmpty),
+                                author = authorText.trim().takeIf(String::isNotEmpty)
+                            )
+                            when (changed) {
+                                1 -> { message = "Eintrag aktualisiert."; null }
+                                ISBN_TAKEN -> "Diese ISBN ist bereits einem anderen Eintrag zugeordnet."
+                                else -> "Der Eintrag konnte nicht aktualisiert werden."
                             }
                         }
                     )

@@ -32,6 +32,12 @@ class IdentityTest {
         // Ordinary words with a few digits are not treated as barcode lines.
         assertNull(BookIdentity.unambiguousIsbn("Bios 1978 Seite 12"))
     }
+    @Test fun printedIsbnAndOtherBarcodeOnOneLineStayAmbiguous() {
+        assertEquals(listOf("9780140328721", "9783125171541"), BookIdentity.isbnsInText("ISBN 9780140328721 9ll783125171541"))
+        assertNull(BookIdentity.unambiguousIsbn("ISBN 9780140328721 9ll783125171541"))
+        // The same edition printed and as barcode line is still one book.
+        assertEquals("9783125171541", BookIdentity.unambiguousIsbn("ISBN 3-12-517154-7 9ll783125171541"))
+    }
     @Test(expected = CancellationException::class) fun cancellationIsNotAnErrorResult() {
         catchingOperation { throw CancellationException("closed") }
     }
