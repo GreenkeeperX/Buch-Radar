@@ -62,6 +62,10 @@ Ein berechtigter Momox-Zugang kann über die Umgebungsvariable `MOMOX_API_TOKEN`
 oder `momox.apiToken` in dieser ignorierten Datei bereitgestellt werden.
 Ohne Zugang lässt sich die App bauen und die Bücherverwaltung nutzen; die
 Momox-Prüfung pausiert mit einem Hinweis. Zugangswerte niemals einchecken.
+Ohne eigenen Schlüssel nutzt die Google-Books-Suche das gemeinsame anonyme
+Tageskontingent, das oft erschöpft ist (HTTP 429; die App pausiert die Quelle dann
+für drei Stunden und meldet „Anfragelimit erreicht“). Für einen privaten Build kann ein
+eigener Schlüssel über `GOOGLE_BOOKS_API_KEY` oder `googleBooks.apiKey` gesetzt werden.
 Build-Konfiguration macht einen Wert nicht geheim gegenüber APK-Analyse.
 
 APK: `android/app/build/outputs/apk/debug/app-debug.apk`.

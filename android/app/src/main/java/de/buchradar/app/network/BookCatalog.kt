@@ -108,7 +108,9 @@ interface OpenLibraryApi {
 
 interface GoogleBooksApi {
     @GET("volumes")
-    suspend fun search(@Query("q") query: String, @Query("maxResults") maxResults: Int = 5): GoogleVolumesResponse
+    suspend fun search(@Query("q") query: String, @Query("maxResults") maxResults: Int = 5,
+        // Optional own key for a private build; without it the shared anonymous quota applies.
+        @Query("key") key: String? = de.buchradar.app.BuildConfig.GOOGLE_BOOKS_API_KEY.ifBlank { null }): GoogleVolumesResponse
 }
 
 interface DnbSruApi {

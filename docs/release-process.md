@@ -19,10 +19,10 @@ kein Ersatz für die noch offenen Review-Arbeiten.
 Im Verzeichnis `android` den Zugang explizit leeren, auch wenn er lokal gesetzt ist:
 
 ```sh
-MOMOX_API_TOKEN= ./gradlew assembleDebug
+MOMOX_API_TOKEN= GOOGLE_BOOKS_API_KEY= ./gradlew assembleDebug
 ```
 
-Anschließend den leeren Token im generierten BuildConfig und im entpackten APK
+Anschließend den leeren Token und den leeren Google-Books-Schlüssel im generierten BuildConfig und im entpackten APK
 prüfen. Ein lokal konfigurierter Zugang ist in einer APK extrahierbar. Kein privates
 APK hochladen. Bis zur Produktionssignierung ausschließlich als **Testversion**
 kennzeichnen; derselbe lokale Testschlüssel ermöglicht Updates, andere Schlüssel

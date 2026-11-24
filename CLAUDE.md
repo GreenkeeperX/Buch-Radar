@@ -17,7 +17,7 @@ Keinen privaten Rechnerpfad in versionierte Dateien schreiben.
 
 ```sh
 cd android
-MOMOX_API_TOKEN= ./gradlew testDebugUnitTest lintDebug assembleDebug
+MOMOX_API_TOKEN= GOOGLE_BOOKS_API_KEY= ./gradlew testDebugUnitTest lintDebug assembleDebug
 ./gradlew connectedDeviceTestAndroidTest
 ```
 

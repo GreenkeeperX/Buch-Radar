@@ -10,6 +10,8 @@ val localSettings = Properties().apply {
     rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
 }
 val momoxToken = providers.environmentVariable("MOMOX_API_TOKEN").orNull ?: localSettings.getProperty("momox.apiToken", "")
+// Private builds only; public release APKs are built with an empty key like the Momox token.
+val googleBooksKey = providers.environmentVariable("GOOGLE_BOOKS_API_KEY").orNull ?: localSettings.getProperty("googleBooks.apiKey", "")
 
 android {
     namespace = "de.buchradar.app"
@@ -21,6 +23,7 @@ android {
         versionCode = 26
         versionName = "0.14.0"
         buildConfigField("String", "MOMOX_API_TOKEN", "\"${momoxToken.replace("\\", "\\\\").replace("\"", "\\\"")}\"")
+        buildConfigField("String", "GOOGLE_BOOKS_API_KEY", "\"${googleBooksKey.replace("\\", "\\\\").replace("\"", "\\\"")}\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildTypes {
