@@ -71,8 +71,11 @@ class AccessibilityAuditTest {
                 SystemClock.sleep(1_500)
                 ActivityScenario.launch(MainActivity::class.java).use {
                     showList()
-                    waitFor { node { n -> n.text?.toString() == seeded[0].title } }
+                    waitFor { node { n -> n.text?.toString() == "Meine Bücher" } }
                     report.put(audit("liste", scale))
+                    // With large fonts the header may fill the screen; the first book must be reachable by scrolling.
+                    scrollTo { n -> n.text?.toString() == seeded[0].title }
+                    report.put(audit("liste-buch", scale))
                     click { n -> n.text?.toString() == seeded[0].title }
                     waitFor { node { n -> n.contentDescription?.toString() == "Weitere Aktionen" } }
                     report.put(audit("details", scale))
@@ -160,6 +163,25 @@ class AccessibilityAuditTest {
         var found: AccessibilityNodeInfo? = null
         automation.rootInActiveWindow?.let { root -> walk(root) { if (found == null && it.isVisibleToUser && match(it)) found = it } }
         return found
+    }
+
+    private fun scrollTo(match: (AccessibilityNodeInfo) -> Boolean) {
+        repeat(8) {
+            if (node(match) != null) return
+            var largest: AccessibilityNodeInfo? = null
+            var largestArea = 0
+            automation.rootInActiveWindow?.let { root ->
+                walk(root) { n ->
+                    if (n.isScrollable && n.isVisibleToUser) {
+                        val r = Rect().also { n.getBoundsInScreen(it) }
+                        if (r.width() * r.height() > largestArea) { largest = n; largestArea = r.width() * r.height() }
+                    }
+                }
+            }
+            largest?.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD) ?: SystemClock.sleep(250)
+            SystemClock.sleep(600)
+        }
+        waitFor { node(match) }
     }
 
     private fun click(match: (AccessibilityNodeInfo) -> Boolean) {

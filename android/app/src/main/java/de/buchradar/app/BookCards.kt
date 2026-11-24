@@ -81,24 +81,25 @@ data class MomoxSummary(val available: Int, val unavailable: Int, val errors: In
 
 internal fun formatDateTime(millis: Long): String = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.GERMANY).format(Date(millis))
 
-/** Compact overview above the list: count and current total purchase value. */
+/**
+ * Overview above the list: title and counts, then the purchase value with the sale action.
+ * Stacked rather than side by side, so large system fonts never squeeze the title into broken words.
+ */
 @Composable
 internal fun ListOverview(title: String, totals: BookListTotals, showValue: Boolean, onSell: (() -> Unit)? = null) {
-    Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleLarge)
-            Text(
-                buildString {
-                    append(if (totals.count == 1) "1 Buch" else "${totals.count} Bücher")
-                    if (showValue && totals.uncheckedCount > 0) append(" · ${totals.uncheckedCount} ungeprüft")
-                    if (showValue && totals.errorCount > 0) append(" · ${totals.errorCount} mit Fehler")
-                },
-                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        if (showValue && totals.availableCount > 0) {
+    Column(Modifier.fillMaxWidth().padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(title, style = MaterialTheme.typography.titleLarge)
+        Text(
+            buildString {
+                append(if (totals.count == 1) "1 Buch" else "${totals.count} Bücher")
+                if (showValue && totals.uncheckedCount > 0) append(" · ${totals.uncheckedCount} ungeprüft")
+                if (showValue && totals.errorCount > 0) append(" · ${totals.errorCount} mit Fehler")
+            },
+            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        if (showValue && totals.availableCount > 0) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             val status = LocalStatusColors.current
-            Column(horizontalAlignment = Alignment.End, modifier = Modifier.semantics(mergeDescendants = true) {}) {
+            Column(Modifier.weight(1f).semantics(mergeDescendants = true) {}) {
                 Text(formatEuro(totals.availableValueCents), style = MaterialTheme.typography.titleLarge,
                     color = status.success, fontWeight = FontWeight.Bold)
                 Text("Ankauf für ${totals.availableCount} ${if (totals.availableCount == 1) "Buch" else "Bücher"}",
@@ -113,7 +114,7 @@ internal fun ListOverview(title: String, totals: BookListTotals, showValue: Bool
 
 /**
  * One compact line for Momox: the last result (tap for the value, × to hide) and the check
- * action. Without a result it says what the check does, so first-time users know.
+ * action. Without a result a full-width button says what the check does.
  */
 @Composable
 internal fun MomoxActionRow(summary: MomoxSummary?, expanded: Boolean, canCheck: Boolean,
@@ -139,16 +140,17 @@ internal fun MomoxActionRow(summary: MomoxSummary?, expanded: Boolean, canCheck:
                             append(" · ${summary.unavailable} ohne")
                             if (summary.errors > 0) withStyle(SpanStyle(color = scheme.error, fontWeight = FontWeight.Bold)) { append(" · ${summary.errors} Fehler") }
                         },
-                        style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis
+                        style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis
                     )
                 }
                 IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, contentDescription = "Ergebnis ausblenden", tint = scheme.onSurfaceVariant) }
-            } else Text("Ankaufpreise für deine Bücher abfragen", Modifier.weight(1f),
-                style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
-            if (canCheck) FilledTonalButton(onClick = onCheck, contentPadding = PaddingValues(horizontal = 14.dp)) {
+            }
+            // Without a result the button alone says what it does and takes the full width.
+            if (canCheck) FilledTonalButton(onClick = onCheck, contentPadding = PaddingValues(horizontal = 14.dp),
+                modifier = if (summary == null) Modifier.fillMaxWidth().heightIn(min = 48.dp) else Modifier.heightIn(min = 48.dp)) {
                 Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Momox prüfen")
+                Text(if (summary == null) "Ankaufpreise bei Momox prüfen" else "Momox prüfen")
             }
         }
         if (summary != null && expanded) Text("Ankaufwert dieser Prüfung: ${formatEuro(summary.totalValueCents.toLong())}",

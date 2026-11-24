@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package de.buchradar.app
 
 import androidx.compose.ui.input.key.type
@@ -29,7 +31,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -39,6 +40,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -170,6 +172,8 @@ class MainActivity : ComponentActivity() {
                 val pendingSet = remember(pendingIsbns) { pendingIsbns.toSet() }
                 val bookListState = rememberLazyListState()
                 val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+                // From 130 % system font the list gets the same space-saving layout as landscape.
+                val largeFont = LocalConfiguration.current.fontScale >= 1.3f
                 val session: BookSessionViewModel = viewModel()
                 val scope = session.viewModelScope
                 val uiScope = rememberCoroutineScope()
@@ -452,7 +456,7 @@ class MainActivity : ComponentActivity() {
                     floatingActionButton = {
                         // Collapses to the camera icon once the list scrolls and in landscape, so it covers less.
                         if (onListScreen && !showSoldBooks && !selectionMode && searchInput.isBlank()) ExtendedFloatingActionButton(
-                            expanded = !landscape && bookListState.firstVisibleItemIndex == 0,
+                            expanded = !landscape && !largeFont && bookListState.firstVisibleItemIndex == 0,
                             onClick = { if (!isSearching) openScanner(ScannerMode.AUTOMATIC) },
                             icon = { Icon(painterResource(R.drawable.ic_camera), contentDescription = "Buch oder Regal scannen") },
                             text = { Text("Buch oder Regal scannen", style = MaterialTheme.typography.titleMedium) }
@@ -732,8 +736,8 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     } else Column(Modifier.fillMaxSize().padding(padding)) {
-                        // In landscape the fixed area may take at most 40 % of the height and scrolls itself.
-                        Column(Modifier.then(if (landscape) Modifier.heightIn(max = (LocalConfiguration.current.screenHeightDp * .4f).dp).verticalScroll(rememberScrollState()) else Modifier)
+                        // In landscape and with large fonts the fixed area may take at most 40 % of the height and scrolls itself.
+                        Column(Modifier.then(if (landscape || largeFont) Modifier.heightIn(max = (LocalConfiguration.current.screenHeightDp * .4f).dp).verticalScroll(rememberScrollState()) else Modifier)
                             .padding(horizontal = 16.dp).padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             if (!selectionMode) OutlinedTextField(
                                     value = searchInput,
@@ -842,9 +846,10 @@ class MainActivity : ComponentActivity() {
                                             }
                                         }
                                         if (showSoldBooks) Text(BookListQuery.sortLabel(sortMode), style = MaterialTheme.typography.labelLarge, color = colorScheme.onSurfaceVariant)
-                                        else Row(
-                                            Modifier.weight(1f).horizontalScroll(rememberScrollState()),
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically
+                                        // Chips wrap instead of scrolling sideways, so no filter hides past the edge.
+                                        else FlowRow(
+                                            Modifier.weight(1f),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                                         ) {
                                             // Counts on the chips; empty filters are hidden unless selected.
                                             BookListQuery.filters.forEach { (key, label) ->
