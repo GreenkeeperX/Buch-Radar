@@ -10,12 +10,18 @@ import kotlinx.coroutines.ensureActive
 import kotlin.coroutines.coroutineContext
 import kotlin.math.abs
 
+// Tuned on public and private shelf photos (see tools/recognition): a step of 18 colour levels in
+// at least ~42 % of the sampled rows marks a book edge.
+private const val EDGE_STEP = 18f
+private const val EDGE_SCALE = 60f
+private const val EDGE_MIN_STRENGTH = 25f
+
 internal data class SpineEdge(val x: Float, val slope: Float, val strength: Float) {
     fun at(y: Float, height: Int) = x + slope * (y - height * .55f)
 }
 
 /** Long, consistently directed colour transitions; short glyph edges should not split books. */
-internal fun spineEdges(pixels: IntArray, width: Int, height: Int): List<SpineEdge> {
+internal fun spineEdges(pixels: IntArray, width: Int, height: Int, bandTop: Float = .23f, bandBottom: Float = .88f): List<SpineEdge> {
     if (width < 32 || height < 32 || pixels.size != width * height) return emptyList()
     val candidates = mutableListOf<SpineEdge>()
     val rows = 48
@@ -23,24 +29,27 @@ internal fun spineEdges(pixels: IntArray, width: Int, height: Int): List<SpineEd
     for (x in delta until width - delta) {
         var best = SpineEdge(x.toFloat(), 0f, 0f)
         for (slope in listOf(-.12f, -.06f, 0f, .06f, .12f)) {
-            val red = IntArray(rows); val green = IntArray(rows); val blue = IntArray(rows)
             var count = 0
+            var hits = 0
             for (row in 0 until rows) {
-                val y = (height * (.23f + .65f * row / (rows - 1))).toInt().coerceIn(0, height - 1)
+                val y = (height * (bandTop + (bandBottom - bandTop) * row / (rows - 1))).toInt().coerceIn(0, height - 1)
                 val xx = (x + slope * (y - height * .55f)).toInt()
                 if (xx - delta < 0 || xx + delta >= width) continue
                 val a = pixels[y * width + xx - delta]; val b = pixels[y * width + xx + delta]
-                red[count] = (b shr 16 and 255) - (a shr 16 and 255)
-                green[count] = (b shr 8 and 255) - (a shr 8 and 255)
-                blue[count] = (b and 255) - (a and 255)
+                val change = (abs((b shr 16 and 255) - (a shr 16 and 255)) + abs((b shr 8 and 255) - (a shr 8 and 255)) +
+                    abs((b and 255) - (a and 255))) / 3f
+                if (change > EDGE_STEP) hits++
                 count++
             }
             if (count < rows * .8f) continue
-            red.sort(0, count); green.sort(0, count); blue.sort(0, count)
-            val strength = (abs(red[count / 2]) + abs(green[count / 2]) + abs(blue[count / 2])) / 3f / (1 + abs(slope) * 5)
+            // Share of sampled rows with a clear colour step. A signed median failed on real shelves:
+            // neighbouring spines of similar darkness, or one light/dark change along the spine, cancel
+            // out, and rows above or below the books dilute it. A book edge is a step in most rows,
+            // whatever its direction, while glyph strokes only hit a few rows.
+            val strength = hits * EDGE_SCALE / count / (1 + abs(slope) * 5)
             if (strength > best.strength) best = SpineEdge(x.toFloat(), slope, strength)
         }
-        if (best.strength >= 22f) candidates += best
+        if (best.strength >= EDGE_MIN_STRENGTH) candidates += best
     }
     val selected = mutableListOf<SpineEdge>()
     for (edge in candidates.sortedByDescending { it.strength }) {
@@ -50,10 +59,29 @@ internal fun spineEdges(pixels: IntArray, width: Int, height: Int): List<SpineEd
     return selected.sortedBy { it.x }
 }
 
+/**
+ * Vertical range to sample for book edges. Edges must run through the whole sampled range, so
+ * a fixed 23–88 % of the photo failed whenever the books filled only part of it (shelf board,
+ * wall or a second row in view). The range now follows the vertical spine lettering.
+ */
+internal fun spineBand(pieces: List<OcrPiece>, imageHeight: Int): Pair<Float, Float> {
+    val vertical = pieces.filter { abs(it.angle % 180) in 55f..125f }
+    if (vertical.size < 2 || imageHeight <= 0) return .23f to .88f
+    val top = vertical.minOf { it.top } / imageHeight
+    val bottom = vertical.maxOf { it.bottom } / imageHeight
+    val pad = .05f
+    val band = (top - pad).coerceAtLeast(.02f) to (bottom + pad).coerceAtMost(.98f)
+    return if (band.second - band.first >= .2f) band else .23f to .88f
+}
+
 internal data class ShelfRegionText(val text: String, val left: Float, val right: Float)
 internal data class ShelfImageResult(val readings: List<ShelfRegionText>, val regions: Int, val exhausted: Boolean) {
-    val texts get() = readings.map { it.text }.filter { it.count(Char::isLetter) >= 4 }
+    val texts get() = readings.map { it.text }.filter(::readableSpine)
 }
+
+/** Enough letters for a title search, or a valid ISBN (a spine or label with only the number). */
+internal fun readableSpine(text: String): Boolean =
+    text.count(Char::isLetter) >= 4 || de.buchradar.app.domain.BookIdentity.isbnsInText(text).isNotEmpty()
 
 /** Read separated regions in one padded atlas; OCR lines may not change word ownership. */
 internal suspend fun readShelfRegions(bitmap: Bitmap, recognizer: TextRecognizer,
@@ -65,7 +93,8 @@ internal suspend fun readShelfRegions(bitmap: Bitmap, recognizer: TextRecognizer
     sample.getPixels(pixels, 0, sampleWidth, 0, 0, sampleWidth, sampleHeight)
     if (sample !== bitmap) sample.recycle()
     val scale = bitmap.width.toFloat() / sampleWidth
-    val edges = spineEdges(pixels, sampleWidth, sampleHeight).map { it.copy(x = it.x * scale) }.filter { edge ->
+    val (bandTop, bandBottom) = spineBand(protectedPieces, bitmap.height)
+    val edges = spineEdges(pixels, sampleWidth, sampleHeight, bandTop, bandBottom).map { it.copy(x = it.x * scale) }.filter { edge ->
         // Vertical lettering is not a binding edge; horizontal lines may already span books.
         protectedPieces.none { p -> abs(p.angle % 180) in 55f..125f && p.width < bitmap.width * .05f && edge.x > p.left && edge.x < p.right }
     }
@@ -92,7 +121,7 @@ internal suspend fun readShelfRegions(bitmap: Bitmap, recognizer: TextRecognizer
         val reading = readings.firstOrNull { abs(it.left - left.x / bitmap.width) < .0001f }
         val existing = protectedPieces.filter { p -> p.left >= left.at(p.y, bitmap.height) && p.right <= right.at(p.y, bitmap.height) }
         val fallback = spineText(existing)
-        ShelfRegionText(reading?.text?.takeIf { it.count(Char::isLetter) >= 4 } ?: fallback, left.x / bitmap.width, right.x / bitmap.width)
+        ShelfRegionText(reading?.text?.let(::cleanSpineText)?.takeIf(::readableSpine) ?: fallback, left.x / bitmap.width, right.x / bitmap.width)
     }
     return ShelfImageResult(supplemented, regions.size, exhausted)
 }
@@ -101,7 +130,14 @@ private suspend fun readSpineBatch(bitmap: Bitmap, recognizer: TextRecognizer,
     regions: List<Pair<SpineEdge, SpineEdge>>, deadline: Long): ShelfImageResult {
     val padding = 32
     val longSide = bitmap.height.coerceAtMost(1280)
-    val cellWidth = (regions.maxOf { it.second.x - it.first.x } * longSide / bitmap.height).toInt().coerceAtLeast(32) + padding * 2
+    // Detected edges often sit a few pixels inside the neighbouring spine, so a tight crop cut off
+    // the first or last letter of each line ("eon Uris"). Read each spine with a small margin; the
+    // reading still belongs to the original region.
+    val drawn = regions.map { (left, right) ->
+        val margin = ((right.x - left.x) * .12f).coerceAtLeast(bitmap.width * .004f)
+        left.copy(x = left.x - margin) to right.copy(x = right.x + margin)
+    }
+    val cellWidth = (drawn.maxOf { it.second.x - it.first.x } * longSide / bitmap.height).toInt().coerceAtLeast(32) + padding * 2
     val cellHeight = longSide + padding * 2
     val columns = kotlin.math.ceil(kotlin.math.sqrt(regions.size.toDouble() * cellHeight / cellWidth)).toInt().coerceIn(1, 12)
     val rows = (regions.size + columns - 1) / columns
@@ -109,7 +145,7 @@ private suspend fun readSpineBatch(bitmap: Bitmap, recognizer: TextRecognizer,
     val atlas = Bitmap.createBitmap((columns * cellWidth * downscale).toInt().coerceAtLeast(32),
         (rows * cellHeight * downscale).toInt().coerceAtLeast(32), Bitmap.Config.ARGB_8888)
     data class Cell(val x: Float, val y: Float, val width: Float, val height: Float)
-    val cells = regions.mapIndexed { index, (left, right) ->
+    val cells = drawn.mapIndexed { index, (left, right) ->
         Cell(((index % columns) * cellWidth + padding) * downscale,
             ((index / columns) * cellHeight + padding) * downscale,
             ((right.x - left.x) * longSide / bitmap.height).coerceAtLeast(32f) * downscale, longSide * downscale)
@@ -121,7 +157,7 @@ private suspend fun readSpineBatch(bitmap: Bitmap, recognizer: TextRecognizer,
         val canvas = Canvas(atlas)
         canvas.drawColor(android.graphics.Color.LTGRAY)
         for (index in regions.indices) {
-            val (left, right) = regions[index]
+            val (left, right) = drawn[index]
             val cell = cells[index]
             val height = bitmap.height
             val source = floatArrayOf(left.at(0f, height), 0f, right.at(0f, height), 0f,

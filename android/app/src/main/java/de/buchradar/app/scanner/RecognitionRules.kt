@@ -14,6 +14,8 @@ internal class RecognitionStability {
     private var since = 0L
     private var count = 0
     private var lastSeen = 0L
+    /** Word overlap needed between frames; shelves with many spines use a lower value. */
+    var minSimilarity = .90f
     fun reset() { anchor = ""; previous = ""; since = 0; count = 0 }
     fun observe(text: String, now: Long, imageSteady: Boolean, readable: Boolean): Boolean {
         val key = foldOcr(text)
@@ -22,7 +24,7 @@ internal class RecognitionStability {
             return false
         }
         lastSeen = now
-        if (!imageSteady || !readable || similarity(anchor, key) < .90f || similarity(previous, key) < .90f) {
+        if (!imageSteady || !readable || similarity(anchor, key) < minSimilarity || similarity(previous, key) < minSimilarity) {
             anchor = key; count = 1; since = now
         } else count++
         previous = key
@@ -65,5 +67,66 @@ internal fun groupSpines(pieces: List<OcrPiece>, imageWidth: Int, imageHeight: I
 internal fun spineText(pieces: List<OcrPiece>): String {
     val angle = pieces.map { it.angle }.average()
     val ordered = if (angle < -55) pieces.sortedByDescending { it.y } else pieces.sortedBy { it.y }
-    return ordered.map { it.text }.distinct().joinToString("\n")
+    return cleanSpineText(ordered.map { it.text }.distinct().joinToString("\n"))
 }
+
+/**
+ * Removes OCR stutter on one spine: the same word read twice (0°/90°/270° passes, spaced
+ * capitals), near-identical variants ("Transhimalaa Transhimalaja") and lines that repeat
+ * text already contained in another line. Only applied within a single spine's text.
+ */
+internal fun cleanSpineText(text: String): String {
+    fun compact(value: String) = foldOcr(value).replace(" ", "")
+    fun bigrams(value: String) = value.windowed(2).toSet()
+    fun similar(a: String, b: String): Boolean {
+        if (a.length < 5 || b.length < 5) return false
+        val x = bigrams(a); val y = bigrams(b)
+        return 2f * x.intersect(y).size / (x.size + y.size) >= .8f
+    }
+    val lines = text.lines().map { line ->
+        val kept = mutableListOf<String>()
+        for (word in line.split(' ').filter(String::isNotBlank)) {
+            val previous = kept.lastOrNull()
+            if (previous != null) {
+                val a = compact(previous); val b = compact(word)
+                if (a.isNotEmpty() && a == b) continue
+                // Numbers (ISBNs, volumes) differing in one digit are different readings, not stutter.
+                if (a.none(Char::isDigit) && b.none(Char::isDigit) && similar(a, b)) { if (b.length > a.length) kept[kept.lastIndex] = word; continue }
+            }
+            kept += word
+        }
+        kept.joinToString(" ")
+    }.filter { compact(it).isNotEmpty() }
+    fun words(value: String) = foldOcr(value).split(' ').filter(String::isNotBlank)
+    val result = lines.filterIndexed { index, line ->
+        val key = compact(line)
+        val lineWords = words(line)
+        lines.withIndex().none { (other, candidate) ->
+            if (other == index) return@none false
+            val otherKey = compact(candidate)
+            val otherWords = words(candidate)
+            // Repeated whole words ("Hedin" in "Sven Hedin"), not substrings ("IT" in "Illustrated").
+            val contained = lineWords.size < otherWords.size && otherWords.windowed(lineWords.size).any { it == lineWords }
+            // Lines with digits (volume numbers, years) are never treated as redundant.
+            val redundant = key.none(Char::isDigit) && otherKey.length > key.length && (contained || similar(key, otherKey))
+            // Identical lines: keep only the first occurrence.
+            redundant || otherKey == key && other < index
+        }
+    }
+    return result.joinToString("\n")
+}
+
+/** Spine words that name a publisher or place, never a book on their own. */
+private val publisherWords = setOf(
+    "hanser", "dtv", "suhrkamp", "fischer", "rororo", "rowohlt", "reclam", "diogenes", "piper", "goldmann",
+    "heyne", "insel", "ullstein", "kiepenheuer", "witsch", "btb", "aufbau", "brockhaus", "leipzig", "berlin",
+    "munchen", "verlag", "taschenbuch", "penguin", "vintage", "oreilly", "beck", "kosmos", "dumont"
+)
+
+/**
+ * A spine group is worth a catalog search only with at least one word of four or more letters
+ * that is not just a publisher or place ("Hanser", "dtv !" alone are not books).
+ */
+internal fun isUsefulSpineText(text: String): Boolean =
+    foldOcr(text).split(' ').any { word -> word.count(Char::isLetter) >= 4 && word !in publisherWords } ||
+        de.buchradar.app.domain.BookIdentity.isbnsInText(text).isNotEmpty()

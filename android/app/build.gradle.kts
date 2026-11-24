@@ -10,6 +10,10 @@ val localSettings = Properties().apply {
     rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
 }
 val momoxToken = providers.environmentVariable("MOMOX_API_TOKEN").orNull ?: localSettings.getProperty("momox.apiToken", "")
+// Private builds only; public release APKs are built with an empty key like the Momox token.
+val googleBooksKey = providers.environmentVariable("GOOGLE_BOOKS_API_KEY").orNull ?: localSettings.getProperty("googleBooks.apiKey", "")
+if (momoxToken.isNotBlank() || googleBooksKey.isNotBlank())
+    logger.lifecycle("Hinweis: Dieser Build enthält private Zugangswerte (Momox/Google Books). Die APK nicht weitergeben oder veröffentlichen.")
 
 android {
     namespace = "de.buchradar.app"
@@ -18,11 +22,24 @@ android {
         applicationId = "de.buchradar.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 26
-        versionName = "0.14.0"
+        versionCode = 27
+        versionName = "0.15.0"
         buildConfigField("String", "MOMOX_API_TOKEN", "\"${momoxToken.replace("\\", "\\\\").replace("\"", "\\\"")}\"")
+        buildConfigField("String", "GOOGLE_BOOKS_API_KEY", "\"${googleBooksKey.replace("\\", "\\\\").replace("\"", "\\\"")}\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
+    buildTypes {
+        // Device tests run as a separate app id. The Android test runner uninstalls the
+        // tested app after `connected…AndroidTest`; it must never touch the real app
+        // `de.buchradar.app` and its local book list.
+        create("deviceTest") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".devicetest"
+            versionNameSuffix = "-devicetest"
+            matchingFallbacks += listOf("debug")
+        }
+    }
+    testBuildType = "deviceTest"
     buildFeatures { compose = true; buildConfig = true }
     testOptions { unitTests.isReturnDefaultValues = true }
     compileOptions {
@@ -54,10 +71,12 @@ dependencies {
     // Android 16 removed the reflective InputManager API used by older Espresso.
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+    "deviceTestImplementation"("androidx.compose.ui:ui-test-manifest")
     implementation("androidx.activity:activity-compose:1.10.0")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-core")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")

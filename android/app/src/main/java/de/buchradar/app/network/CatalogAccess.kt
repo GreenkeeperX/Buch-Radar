@@ -12,6 +12,7 @@ import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.coroutineContext
 
 class CatalogUnavailable(message: String) : Exception(message)
+private class SourcePaused : Exception("Anfragelimit")
 
 internal data class CatalogResult<T>(val value: T, val warnings: List<String>)
 
@@ -20,10 +21,14 @@ private class SourceTrace(budgetMillis: Long) : AbstractCoroutineContextElement(
     val deadline = System.nanoTime() / 1_000_000 + budgetMillis
     var successful = 0
     val failed = linkedSetOf<String>()
+    val limited = linkedSetOf<String>()
+    val notes = linkedSetOf<String>()
     var budgetExhausted = false
     fun remaining() = (deadline - System.nanoTime() / 1_000_000).coerceAtLeast(0)
     fun warnings() = buildList {
+        addAll(notes)
         if (failed.isNotEmpty()) add("Nicht alle Quellen erreichbar: ${failed.joinToString()}. Treffer können fehlen.")
+        if (limited.isNotEmpty()) add("Anfragelimit erreicht: ${limited.joinToString()}. Diese Quelle wird später wieder gefragt; Treffer können fehlen.")
         if (budgetExhausted) add("Zeitlimit erreicht. Bisherige Treffer bleiben erhalten; bei Bedarf erneut suchen.")
     }
 }
@@ -36,6 +41,9 @@ internal object CatalogAccess {
     }
     private val gates = mutableMapOf<String, Mutex>()
     private val lastRequest = mutableMapOf<String, Long>()
+    /** Sources that answered HTTP 429 are paused, so every search does not hit the limit again. */
+    private val blockedUntil = mutableMapOf<String, Long>()
+    private const val LIMIT_PAUSE_MILLIS = 3 * 3_600_000L
 
     suspend fun <T> search(block: suspend () -> T): T {
         if (coroutineContext[SourceTrace] != null) return block()
@@ -50,10 +58,15 @@ internal object CatalogAccess {
         val trace = SourceTrace(budgetMillis)
         return withContext(trace) {
             val result = block()
-            if (trace.successful == 0 && (trace.failed.isNotEmpty() || trace.budgetExhausted))
+            if (trace.successful == 0 && (trace.failed.isNotEmpty() || trace.limited.isNotEmpty() || trace.budgetExhausted))
                 throw CatalogUnavailable("Katalog nicht erreichbar: ${trace.failed.joinToString()}. Bitte erneut versuchen.")
             CatalogResult(result, trace.warnings())
         }
+    }
+
+    /** A hint about the result itself (not a source failure), shown with the search warnings. */
+    suspend fun note(text: String) {
+        coroutineContext[SourceTrace]?.notes?.add(text)
     }
 
     @Suppress("UNCHECKED_CAST")
@@ -64,12 +77,16 @@ internal object CatalogAccess {
             trace?.successful = (trace?.successful ?: 0) + 1
             return it.value as T
         }
+        fun paused() = synchronized(blockedUntil) { (blockedUntil[source] ?: 0) > System.currentTimeMillis() }
+        if (paused()) { trace?.limited?.add(source); return null }
         val gate = synchronized(gates) { gates.getOrPut(source) { Mutex() } }
         val remaining = trace?.remaining() ?: 12_000
         if (remaining <= 0) { trace?.budgetExhausted = true; return null }
         val result = catchingOperation {
             withTimeoutOrNull(minOf(12_000, remaining)) {
                 gate.withLock {
+                    // Parallel searches queue at the gate; one of them may have hit the limit meanwhile.
+                    if (paused()) throw SourcePaused()
                     val wait = synchronized(lastRequest) { 1_100 - (System.nanoTime() / 1_000_000 - (lastRequest[source] ?: 0)) }
                     if (wait > 0) delay(wait)
                     synchronized(lastRequest) { lastRequest[source] = System.nanoTime() / 1_000_000 }
@@ -85,6 +102,16 @@ internal object CatalogAccess {
         return result.getOrNull()?.also {
             trace?.successful = (trace?.successful ?: 0) + 1
             synchronized(cache) { cache[cacheKey] = Cached(System.currentTimeMillis(), it) }
-        } ?: run { trace?.failed?.add(source); null }
+        } ?: run {
+            if (result.exceptionOrNull() is SourcePaused) { trace?.limited?.add(source); return null }
+            val code = (result.exceptionOrNull() as? retrofit2.HttpException)?.code()
+            // Only the source and status are logged, never the query.
+            code?.let { android.util.Log.i("BuchRadar.Catalog", "$source: HTTP $it") }
+            if (code == 429) {
+                synchronized(blockedUntil) { blockedUntil[source] = System.currentTimeMillis() + LIMIT_PAUSE_MILLIS }
+                trace?.limited?.add(source)
+            } else trace?.failed?.add(source)
+            null
+        }
     }
 }

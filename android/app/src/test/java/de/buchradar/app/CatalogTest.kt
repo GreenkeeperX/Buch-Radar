@@ -45,4 +45,32 @@ class CatalogTest {
         assertTrue("title" in match.conflictingFields)
         assertEquals(2, match.fieldValues["title"]!!.size)
     }
+
+    private val hailey = listOf(
+        CatalogBook("Hotel", "Arthur Hailey", 1965),
+        CatalogBook("Airport", "Arthur Hailey", 1968),
+        CatalogBook("Arthur und die Minimoys", "Luc Besson", 2004))
+
+    @Test fun authorAloneIsRecognizedAsAuthorOnly() {
+        assertEquals("Arthur Hailey", BookCatalog.authorOnlyName("ARTHUR HAILEY", hailey))
+        assertEquals("Arthur Hailey", BookCatalog.authorOnlyName("Arthur Hailey\nRoman", hailey))
+    }
+
+    @Test fun recognizedTitleIsNotAuthorOnly() {
+        assertNull(BookCatalog.authorOnlyName("Arthur Hailey Hotel", hailey))
+        assertNull(BookCatalog.authorOnlyName("Tom Reiss Der Orientalist", listOf(CatalogBook("Der Orientalist", "Tom Reiss", 2008))))
+        // A title word that happens to be a first name is not an author.
+        assertNull(BookCatalog.authorOnlyName("Arthur Minimoys", hailey))
+    }
+
+    @Test fun catalogNameInInvertedOrderStillMatches() {
+        assertEquals("Hailey, Arthur", BookCatalog.authorOnlyName("Arthur Hailey", listOf(CatalogBook("Hotel", "Hailey, Arthur", 1966))))
+    }
+
+    @Test fun authorChoicesShowDifferentTitlesBeforeFurtherEditions() {
+        val first = CatalogBook("Hotel", "Arthur Hailey", 1965, "9780804429573")
+        val second = CatalogBook("Hotel", "Arthur Hailey", 1990, "9780140328721")
+        val other = CatalogBook("Airport", "Arthur Hailey", 1968)
+        assertEquals(listOf(first, other, second), BookCatalog.authorChoiceOrder(listOf(first, second, other)))
+    }
 }

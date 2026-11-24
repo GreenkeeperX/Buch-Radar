@@ -108,7 +108,8 @@
             "georg",
             "christoph",
             "lichtenberg",
-            "schriften"
+            "wagnis",
+            "aufklarung"
           ]
         },
         {
@@ -240,6 +241,62 @@
             "traum"
           ]
         }
+      ]
+    },
+    {
+      "file": "isbn-two-books.jpg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/d/d2/ISBN.JPG",
+      "source": "https://commons.wikimedia.org/wiki/File:ISBN.JPG",
+      "credit": "Wikimedia Commons, Uploader: Maksim (Urheberangabe siehe Quellseite)",
+      "license": "CC BY-SA 3.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+      "sha256": "a37da32fcc6e2a25d661c787de2504301553e3459195b7b5ad1a4538d742bc71",
+      "mode": "single",
+      "category": "isbn",
+      "expectedTokens": [
+        "rhif",
+        "rhyngwladol",
+        "isbn"
+      ],
+      "expectedIsbns": [
+        "9780863815805",
+        "9780862436803"
+      ]
+    },
+    {
+      "file": "isbn-ean-label.jpg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/6/67/ISBNetEAN.jpg",
+      "source": "https://commons.wikimedia.org/wiki/File:ISBNetEAN.jpg",
+      "credit": "Wikimedia Commons, Uploader: Maksim (Urheberangabe siehe Quellseite)",
+      "license": "CC BY-SA 3.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+      "sha256": "bb2dc75e417c0c4eb703ac5d3d667b038ae0ef1a8c9c13a730b6f96fc2642d58",
+      "mode": "single",
+      "category": "isbn",
+      "expectedTokens": [
+        "isbn"
+      ],
+      "expectedIsbns": [
+        "9782940199617"
+      ]
+    },
+    {
+      "file": "isbn-ean-green.jpg",
+      "url": "https://upload.wikimedia.org/wikipedia/commons/d/d8/ISBNundEAN.jpg",
+      "source": "https://commons.wikimedia.org/wiki/File:ISBNundEAN.jpg",
+      "credit": "Wikimedia Commons, Uploader: Maksim (Urheberangabe siehe Quellseite)",
+      "license": "CC BY-SA 3.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/3.0/",
+      "sha256": "90bc8c0079210508842b19606d19e4a02a1106ac6bc7d43b9260b0c1348e7bda",
+      "mode": "single",
+      "category": "isbn",
+      "expectedTokens": [
+        "isbn",
+        "fundiert",
+        "korpus"
+      ],
+      "expectedIsbns": [
+        "9783125171541"
       ]
     }
   ]

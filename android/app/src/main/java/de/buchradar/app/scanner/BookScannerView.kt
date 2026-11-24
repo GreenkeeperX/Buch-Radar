@@ -6,6 +6,9 @@ import android.os.SystemClock
 import android.util.Size
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.core.UseCaseGroup
 import androidx.camera.core.resolutionselector.ResolutionSelector
@@ -19,7 +22,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.foundation.shape.RoundedCornerShape
+import android.content.res.Configuration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -71,23 +78,31 @@ fun BookScannerView(
     var hint by remember { mutableStateOf("Buch ins Bild halten") }
     val delivered = remember { AtomicBoolean(false) }
     val manualRequested = remember { AtomicBoolean(false) }
+    // The text shown when the button was tapped: a later frame may only be used if it still shows it.
+    val manualKey = remember { java.util.concurrent.atomic.AtomicReference("") }
     var finalizing by remember { mutableStateOf(false) }
-    val confirm: () -> Unit = { manualRequested.set(true) }
+    val confirm: () -> Unit = { manualKey.set(foldOcr(observed)); manualRequested.set(true) }
     Box(modifier.fillMaxSize().background(Color.Black)) {
         AndroidView(factory = { preview }, modifier = Modifier.fillMaxSize())
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(12.dp), verticalArrangement = Arrangement.SpaceBetween) {
-            Row(Modifier.fillMaxWidth().background(Color.Black.copy(alpha = .75f)), horizontalArrangement = Arrangement.SpaceBetween) {
-                TextButton(onClick = onClose) { Text("Schließen", color = Color.White) }
-                Box {
+            // Compact controls: in landscape full-width bars covered much of the camera image.
+            val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+            val chip = Modifier.background(Color.Black.copy(alpha = .7f), RoundedCornerShape(20.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                TextButton(onClick = onClose, modifier = chip) { Text("Schließen", color = Color.White) }
+                Box(chip) {
                     TextButton(onClick = { menu = true }, enabled = !finalizing) { Text("${when(mode) { ScannerMode.AUTOMATIC -> "Auto"; ScannerMode.SINGLE_BOOK -> "Einzelbuch"; ScannerMode.SHELF -> "Regal"; ScannerMode.COVER_TEST -> "Cover-Test" }} ▾", color = Color.White) }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                         ScannerMode.entries.forEach { choice -> DropdownMenuItem(text = { Text(when(choice) { ScannerMode.AUTOMATIC -> "Automatisch"; ScannerMode.SINGLE_BOOK -> "Einzelbuch"; ScannerMode.SHELF -> "Regal"; ScannerMode.COVER_TEST -> "Cover-Test (experimentell)" }) }, onClick = { mode = choice; menu = false }) }
                     }
                 }
             }
-            Column(Modifier.fillMaxWidth().background(Color.Black.copy(alpha = .8f)).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.align(Alignment.CenterHorizontally).widthIn(max = 560.dp).fillMaxWidth()
+                .background(Color.Black.copy(alpha = .75f), RoundedCornerShape(16.dp)).padding(horizontal = 12.dp, vertical = if (landscape) 8.dp else 12.dp),
+                verticalArrangement = Arrangement.spacedBy(if (landscape) 4.dp else 8.dp)) {
                 Text(hint, color = Color.White, style = MaterialTheme.typography.titleMedium)
-                if (observed.isNotBlank()) Text(observed, color = Color.White, maxLines = 3, style = MaterialTheme.typography.bodyLarge)
+                if (observed.isNotBlank()) Text(observed, color = Color.White, maxLines = if (landscape) 1 else 3,
+                    overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
                 Button(onClick = confirm, enabled = !finalizing && observed.isNotBlank() && frame != null, modifier = Modifier.fillMaxWidth()) {
                     Text(if (finalizing) "Buchrücken werden gelesen …" else if (shelf) "Buchrücken jetzt lesen" else "Jetzt suchen")
                 }
@@ -103,6 +118,7 @@ fun BookScannerView(
         var provider: ProcessCameraProvider? = null
         var previewUseCase: Preview? = null
         var analysis: ImageAnalysis? = null
+        var capture: ImageCapture? = null
         var latestOwned: Bitmap? = null
         var transferredFrame: Bitmap? = null
         var previousSample: IntArray? = null
@@ -114,6 +130,7 @@ fun BookScannerView(
         var publishKey = ""
         var publishCount = 0
         var rotatedPieces = emptyList<OcrPiece>()
+        var tapMismatchAt = -10_000L
         val stability = RecognitionStability()
         try {
             val future = ProcessCameraProvider.getInstance(context)
@@ -160,9 +177,9 @@ fun BookScannerView(
                         val width = if (proxy.imageInfo.rotationDegrees % 180 == 0) proxy.width else proxy.height
                         val height = if (proxy.imageInfo.rotationDegrees % 180 == 0) proxy.height else proxy.width
                         val sample = imageSample(image)
-                        val difference = previousSample?.let { old -> old.indices.sumOf { abs(old[it] - sample[it]) }.toDouble() / old.size } ?: 255.0
+                        val difference = previousSample?.let { old -> frameDifference(old, sample) } ?: 255.0
                         previousSample = sample
-                        if (difference >= 8) rotatedPieces = emptyList()
+                        if (difference >= STEADY_DIFFERENCE) rotatedPieces = emptyList()
                         if (sampleCount % 3 == 0 && (actualMode == ScannerMode.SHELF || actualMode == ScannerMode.AUTOMATIC || recognized.text.length < 12)) {
                             val extra = mutableListOf<OcrPiece>()
                             for (degrees in listOf(90, 270)) {
@@ -179,16 +196,23 @@ fun BookScannerView(
                             acc
                         }
                         val groups = groupSpines(pieces, image.width, image.height)
-                        val found = groups.map(::spineText).filter { it.isNotBlank() }
                         val looksShelf = groups.size >= 3 && groups.count { group -> group.any { abs(it.angle % 180) in 55f..125f } } >= 2
                         shelfVotes = (shelfVotes + if (looksShelf) 1 else -1).coerceIn(-4, 4)
                         val isShelf = actualMode == ScannerMode.SHELF || actualMode == ScannerMode.AUTOMATIC && shelfVotes >= 3
+                        // Publisher and fragment filtering only applies to shelves: a single book whose
+                        // readable text is just "ISBN 978…" must still reach the ISBN recognition.
+                        val found = groups.map(::spineText).filter { if (isShelf) isUsefulSpineText(it) else it.isNotBlank() }
                         val text = if (isShelf) found.joinToString("\n") else found.joinToString("\n").take(2_000)
                         val edges = sample.indices.filter { it % 64 in 1..62 && it / 64 in 1..62 }
                             .map { abs(4 * sample[it] - sample[it-1] - sample[it+1] - sample[it-64] - sample[it+64]) }.average()
-                        val ready = stability.observe(text, lastAt, difference < 8, edges > 2.0)
+                        // Shelf texts of many spines vary slightly between frames; require less overlap there.
+                        stability.minSimilarity = if (isShelf) .70f else .90f
+                        val steady = difference < STEADY_DIFFERENCE
+                        val ready = stability.observe(text, lastAt, steady, edges > 2.0)
                         val currentKey = foldOcr(text)
-                        if (currentKey == publishKey) publishCount++ else { publishKey = currentKey; publishCount = 1 }
+                        // Show (and allow manual reading of) text once two frames roughly agree.
+                        if (currentKey == publishKey || isShelf && wordOverlap(currentKey, publishKey) >= .5f) publishCount++ else publishCount = 1
+                        publishKey = currentKey
                         val shouldPublish = text.isNotBlank() && publishCount >= 2
                         sampleCount++
                         if (sampleCount % 10 == 0) AppLog.add(context, "Kamera: ${width}×$height, ${groups.size} Textregionen, Bewegung=${difference.toInt()}, Konturen=${edges.toInt()}")
@@ -205,18 +229,27 @@ fun BookScannerView(
                                 if (lastAt - lastTextAt > 2_000) { observed = ""; spines = emptyList() }
                             }
                             hint = when {
+                                lastAt - tapMismatchAt < 2_500 -> "Bild hat sich verändert – bitte erneut tippen"
                                 text.isBlank() -> "Näher heran – noch kein lesbarer Text"
                                 edges <= 2.0 -> "Text noch unscharf – bitte neu ausrichten"
-                                difference >= 8 -> "Noch ruhig halten"
+                                !steady -> "Noch ruhig halten"
                                 isShelf -> "${found.size} Buchrücken – ruhig halten"
                                 actualMode == ScannerMode.COVER_TEST -> "Cover-Test: Text liefert Kandidaten"
                                 else -> "Text erkannt – Suche startet bei ruhigem Bild"
                             }
                         }
-                        if (text.isNotBlank() && (ready || manualRequested.get()) && delivered.compareAndSet(false, true)) {
+                        // A tap confirms the text on screen; if the camera moved on since, ask again instead of
+                        // searching for text the user never saw.
+                        val manualMatches = manualRequested.get() && wordOverlap(currentKey, manualKey.get()) >= if (isShelf) .5f else .6f
+                        if (manualRequested.get() && !manualMatches && !ready) {
+                            manualRequested.set(false)
+                            tapMismatchAt = lastAt
+                            withContext(Dispatchers.Main) { hint = "Bild hat sich verändert – bitte erneut tippen" }
+                        }
+                        if (text.isNotBlank() && (ready || manualMatches) && delivered.compareAndSet(false, true)) {
                             manualRequested.set(false)
                             withContext(Dispatchers.Main) { finalizing = true; if (isShelf) hint = "Buchrücken werden getrennt gelesen – einen Moment …" }
-                            val separated = if (isShelf) readShelfRegions(image, recognizer, protectedPieces = pieces) else null
+                            val separated = if (isShelf) readShelfWithStill(context, capture, image, pieces, recognizer) else null
                             ensureActive()
                             withContext(Dispatchers.Main) {
                                 if (latestOwned !== image) latestOwned?.recycle()
@@ -224,7 +257,7 @@ fun BookScannerView(
                                 ownedFrame = null
                                 transferredFrame = image
                                 if (isShelf) {
-                                    val selected = separated?.texts?.takeIf { it.isNotEmpty() } ?: found
+                                    val selected = separated?.texts?.filter(::isUsefulSpineText)?.takeIf { it.isNotEmpty() } ?: found
                                     val warning = when {
                                         separated == null -> "Buchgrenzen waren nicht eindeutig. Bitte die vorgeschlagenen Gruppen prüfen."
                                         separated.exhausted -> "Nicht alle Rücken konnten vollständig gelesen werden. Fehlende Bücher bitte näher scannen."
@@ -247,8 +280,19 @@ fun BookScannerView(
             withContext(Dispatchers.Main.immediate) {
                 active.unbindAll()
                 // FIT_CENTER exposes the full analysis region; share a viewport when it is ready.
-                val group = UseCaseGroup.Builder().addUseCase(cameraPreview).addUseCase(analyzer).apply { preview.viewPort?.let { setViewPort(it) } }.build()
-                active.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, group)
+                fun group(still: ImageCapture?) = UseCaseGroup.Builder().addUseCase(cameraPreview).addUseCase(analyzer)
+                    .apply { still?.let { addUseCase(it) }; preview.viewPort?.let { setViewPort(it) } }.build()
+                // A still image gives shelf reading more pixels than the analysis stream.
+                val still = ImageCapture.Builder().setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                    .setResolutionSelector(ResolutionSelector.Builder().setResolutionStrategy(ResolutionStrategy(Size(2592, 1944), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER)).build()).build()
+                try {
+                    active.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, group(still))
+                    capture = still
+                } catch (unsupported: IllegalArgumentException) {
+                    AppLog.add(context, "Kamera: kein zusätzliches Foto möglich, Regal nutzt Vorschaubild")
+                    active.unbindAll()
+                    active.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, group(null))
+                }
             }
             awaitCancellation()
         } catch (cancelled: CancellationException) { throw cancelled }
@@ -259,12 +303,93 @@ fun BookScannerView(
             withContext(NonCancellable) { worker.coroutineContext[Job]?.join() }
             // An earlier screen may finish cleanup after the next scanner has already bound.
             withContext(NonCancellable + Dispatchers.Main.immediate) {
-                provider?.unbind(*listOfNotNull(previewUseCase, analysis).toTypedArray())
+                provider?.unbind(*listOfNotNull(previewUseCase, analysis, capture).toTypedArray())
             }
             barcodeScanner.close(); recognizer.close(); executor.shutdown()
             if (latestOwned !== transferredFrame) latestOwned?.recycle()
         }
     }
+}
+
+/**
+ * Reads shelf regions from a fresh still image when its framing matches the analysed frame;
+ * otherwise, or if capturing fails or takes too long, from the analysed frame itself.
+ */
+private suspend fun readShelfWithStill(context: android.content.Context, capture: ImageCapture?, frame: Bitmap,
+    pieces: List<OcrPiece>, recognizer: com.google.mlkit.vision.text.TextRecognizer): ShelfImageResult? {
+    val still = capture?.let { captureStill(context, it, maxSide = 2560) }
+    // Same framing is not enough: the picture is taken after the analysed frame, so the camera may
+    // have moved. Only use it when its content still matches the frame the text positions come from.
+    val sameScene = still != null && still.width > frame.width &&
+        abs(still.width.toFloat() / still.height - frame.width.toFloat() / frame.height) <= .02f * frame.width / frame.height &&
+        frameDifference(imageSample(frame), imageSample(still)).also { AppLog.add(context, "Regal: Foto-Abweichung ${it.toInt()}") } < STILL_MATCH_DIFFERENCE
+    if (!sameScene) {
+        still?.recycle()
+        return readShelfRegions(frame, recognizer, protectedPieces = pieces)
+    }
+    still!!
+    return try {
+        val f = still.width.toFloat() / frame.width
+        AppLog.add(context, "Regal: Foto ${still.width}×${still.height} statt ${frame.width}×${frame.height}")
+        readShelfRegions(still, recognizer, protectedPieces = pieces.map { p ->
+            p.copy(left = p.left * f, top = p.top * f, right = p.right * f, bottom = p.bottom * f)
+        })
+    } finally { still.recycle() }
+}
+
+/** Takes one picture, upright and scaled to [maxSide]; null on error or after four seconds. */
+private suspend fun captureStill(context: android.content.Context, capture: ImageCapture, maxSide: Int): Bitmap? =
+    // The picture is converted and its camera buffer released inside the timeout block: a proxy
+    // handed over just before a timeout or cancellation must never be left open.
+    withTimeoutOrNull(4_000) {
+        val proxy = suspendCancellableCoroutine<ImageProxy?> { continuation ->
+            capture.takePicture(ContextCompat.getMainExecutor(context), object : ImageCapture.OnImageCapturedCallback() {
+                override fun onCaptureSuccess(image: ImageProxy) {
+                    // A late picture after timeout or closing must still be released, also when the
+                    // waiting coroutine is cancelled after the hand-over.
+                    if (continuation.isActive) continuation.resume(image) { _ -> image.close() } else image.close()
+                }
+                override fun onError(exception: ImageCaptureException) {
+                    AppLog.add(context, "Regal-Foto fehlgeschlagen (${exception.imageCaptureError})")
+                    if (continuation.isActive) continuation.resume(null)
+                }
+            })
+        } ?: return@withTimeoutOrNull null
+        try {
+            val raw = proxy.toBitmap()
+            val scale = minOf(1f, maxSide.toFloat() / maxOf(raw.width, raw.height))
+            val matrix = Matrix().apply { postRotate(proxy.imageInfo.rotationDegrees.toFloat()); postScale(scale, scale) }
+            val upright = Bitmap.createBitmap(raw, 0, 0, raw.width, raw.height, matrix, true)
+            if (upright !== raw) raw.recycle()
+            upright
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            AppLog.add(context, "Regal-Foto nicht lesbar (${error.javaClass.simpleName})")
+            null
+        } finally { proxy.close() }
+    }
+
+/**
+ * Mean brightness change per sample (0–255) still counted as a steady image. 8 was too strict
+ * for a hand-held phone (and for screens, which flicker); 12 still rejects real movement.
+ */
+private const val STEADY_DIFFERENCE = 12
+/** Still picture and analysis frame differ in exposure and processing, so allow twice the steady motion. */
+private const val STILL_MATCH_DIFFERENCE = 24
+
+/**
+ * Mean per-sample change after removing the overall brightness shift, so exposure changes and
+ * screen flicker do not count as movement; shifting content still does.
+ */
+internal fun frameDifference(old: IntArray, new: IntArray): Double {
+    val shift = (new.sum() - old.sum()).toDouble() / old.size
+    return old.indices.sumOf { abs(new[it] - old[it] - shift) } / old.size
+}
+
+private fun wordOverlap(a: String, b: String): Float {
+    if (a.isBlank() || b.isBlank()) return 0f
+    val x = a.split(' ').toSet(); val y = b.split(' ').toSet()
+    return x.intersect(y).size.toFloat() / x.union(y).size
 }
 
 /** Keep ImageProxy alive until ML Kit is finished, even when the screen closes. */

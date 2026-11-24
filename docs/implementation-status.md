@@ -156,6 +156,58 @@ nach Messung an freigegebenen Scanbeispielen als bestätigt.
 - Langlauf, Drehung während laufender OCR und allgemeine Erkennungsqualität bleiben
   weitere Abnahmen.
 
+## Oberfläche und Listenaktionen (0.15.0)
+- Eigenes Farbschema hell/dunkel aus den Farben des App-Symbols, semantische
+  Statusfarben (`ui/Theme.kt`), Material-Icons statt Textzeichen, Fenster-Theme
+  ohne weißes Aufblitzen beim Start im Dunkelmodus.
+- Navigationsleiste mit Anzahl, Filter-Chips, Gesamt-Ankaufwert, Fortschrittsbalken
+  der Momox-Prüfung, Kennzeichnung eingereihter Bücher, Leerzustände.
+- Buchkarten mit Cover-Platzhalter und Überlaufmenü; Auswahlmodus mit kontextueller
+  Titelleiste. Statusmeldungen als farbige, von TalkBack angesagte Banner.
+- Entfernen, Verkauft-Markieren, Zurückholen, Bearbeiten und Prüfstart fangen
+  Datenbankfehler ab. Rückgängig per Snackbar für Entfernen und Verkauft-Markieren.
+- Filter/Sortierung/Summen in `domain/BookListQuery.kt` mit JVM-Tests; Karten und
+  Dialoge in `BookCards.kt`. Kein Schemawechsel.
+- Design-Review (Heuristiken, Screenshots vom Gerät): Scannen als schwebender Knopf
+  unten, Momox-Prüfung und letztes Ergebnis in einer Zeile, nur ein angebotener Preis
+  als farbiger Chip, Filter-Chips mit Anzahl, Sortierung als Symbolknopf, Kartenaktionen
+  auch in den Buchdetails, Darstellung als Segmentknopf.
+- Zweitprüfung (statisch, Codex) behoben: Listen-Keys getrennt (importierte ID
+  „list-header“ hätte die Liste abstürzen lassen), Rückgängig stellt die tatsächlich
+  gelöschte Zeile wieder her und liegt im ViewModel (übersteht Drehen), veraltete
+  Pausierantwort hält die Warteschlange nicht mehr an, verweigerte Kamera setzt die
+  Regal-Bearbeitung fort, mehrzeilige Eingabe wird nie zu einer ISBN verbunden.
+- Offen: Großschrift/TalkBack-Abnahme, Rückgängig nach Drehen am Gerät,
+  weitere Aufteilung von `MainActivity` (Regal- und Trefferansicht).
+
+## Erkennung (0.15.0)
+- ISBN aus Text: bis zu zwei Trenner zwischen Ziffern (OCR liest „-“ als „.“) und
+  Klarschriftzeile unter dem Barcode mit typischen Fehllesungen; nur 978/979 mit
+  gültiger Prüfziffer. Pixel 9a, 3 öffentliche ISBN-Fotos: vorher 14/18 Fälle,
+  nachher 24/24 ISBNs in allen 18 Fällen, keine Falschtreffer (`tools/recognition`).
+- Buchrücken: Stotter-/Doppellesungen werden je Rücken entfernt (`cleanSpineText`).
+- Regal: Beim Abschluss ein hochauflösendes Foto (Ziel 2592×1944, max. 2560 px) statt
+  des Analysebilds (1920×1440); Rückfall auf das Analysebild. Wirkung am Gerät noch
+  nicht gemessen.
+- Scanner hing am Gerät bei „Noch ruhig halten“ (Bewegungswerte 18–58 über der
+  Grenze 8; Regaltext nie zweimal identisch, daher Knopf gesperrt). Jetzt: Grenze 12,
+  Helligkeitsänderung/Flackern wird herausgerechnet, Regal stabil ab 70 %
+  Wortüberlappung. Kompaktere Bedienleisten im Querformat. Nachweis am Gerät offen.
+- Nur Autor erkannt (z. B. Rücken „Arthur Hailey“ ohne lesbaren Titel): Die Suche
+  fragt zusätzlich nach Büchern dieses Autors (Google Books `inauthor`, DNB `per`),
+  zeigt zuerst verschiedene Titel, dann weitere Ausgaben, ohne Trefferbewertung, und
+  weist mit einem Hinweis auf die nötige Auswahl hin. Kein automatisches Raten.
+  Grundlage sind JVM-Tests der Erkennungsregel; Wirkung am Gerät noch nicht gemessen.
+- Codex-Prüfung, Runde 2 (offene Befunde): Rückgängig sammelt mehrere schnelle Lösch-/
+  Verkauft-Aktionen statt nur die letzte zu behalten und läuft nicht ab, solange Details oder
+  Einstellungen die Liste verdecken. Ein während der Momox-Anfrage verkauftes oder ersetztes
+  Buch pausiert die Warteschlange nicht mehr. Nach HTTP 429 prüfen am Quellen-Tor wartende
+  parallele Suchen die Sperre erneut. Regal-Foto nur bei gleichem Bildinhalt wie das
+  analysierte Bild (Abweichung wird protokolliert), sonst Analysebild. Manuelles „Jetzt
+  suchen“ gilt nur für den angezeigten Text; bei verändertem Bild fragt der Scanner erneut.
+  Rücken mit nur einer ISBN bleiben im Regalpfad erhalten. Builds mit privaten Zugangswerten
+  geben einen Hinweis aus. Am Gerät noch nicht geprüft.
+
 ## Externe Voraussetzungen
 - Der bisherige Momox-Zugang ist nicht als öffentliche Schnittstelle zugesichert.
   Ein offizieller Zugang muss mit dem Anbieter geklärt werden. Die FAQ erwähnt

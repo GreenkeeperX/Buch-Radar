@@ -17,10 +17,16 @@ Keinen privaten Rechnerpfad in versionierte Dateien schreiben.
 
 ```sh
 cd android
-MOMOX_API_TOKEN= ./gradlew testDebugUnitTest lintDebug assembleDebug
-./gradlew connectedDebugAndroidTest
+MOMOX_API_TOKEN= GOOGLE_BOOKS_API_KEY= ./gradlew testDebugUnitTest lintDebug assembleDebug
+./gradlew connectedDeviceTestAndroidTest
 ```
 
+Ablauf für Arbeit am echten Gerät: Skill `.claude/skills/buchradar-geraetetest`.
+Gerätetests laufen als eigene App `de.buchradar.app.devicetest` (Build-Typ
+`deviceTest`), weil der Test-Runner die getestete App danach deinstalliert. Niemals
+Gerätetests gegen `de.buchradar.app` ausführen, niemals `connectedDebugAndroidTest`
+wieder einführen, kein `pm clear`/`uninstall` auf dem echten Gerät. Vor jeder Arbeit
+am echten Gerät zuerst eine private Sicherung der Bücherliste anlegen.
 Gerätetests brauchen ein entsperrtes Android-Gerät/Emulator. Sie verwenden isolierte
 Testdatenbanken und temporäre Dateien; niemals die echte Bücherliste zurücksetzen.
 Backend-Vertragstests: Anforderungen aus `backend/requirements.txt` in einer

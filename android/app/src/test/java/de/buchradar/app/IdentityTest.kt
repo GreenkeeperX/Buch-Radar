@@ -20,6 +20,33 @@ class IdentityTest {
     @Test fun ambiguousEditionsRequireChoice() {
         assertNull(BookIdentity.unambiguousIsbn("ISBN 9780804429573\nISBN 9780140328721"))
     }
+    @Test fun toleratesOcrSeparatorsInsideIsbn() {
+        assertEquals("9783125171541", BookIdentity.unambiguousIsbn("ISBN 3-12.5 17154-7"))
+        assertEquals("9783125171541", BookIdentity.unambiguousIsbn("ISBN 3–12–517154–7"))
+    }
+    @Test fun recoversEanFromBarcodeLine() {
+        assertEquals("9783125171541", BookIdentity.unambiguousIsbn("9ll783125171541"))
+        assertEquals("9780863815805", BookIdentity.unambiguousIsbn("g\"780863\"815805"))
+        // Wrong digit (5 read as 3): the check digit fails, nothing is guessed.
+        assertNull(BookIdentity.unambiguousIsbn("9783123171541"))
+        // Ordinary words with a few digits are not treated as barcode lines.
+        assertNull(BookIdentity.unambiguousIsbn("Bios 1978 Seite 12"))
+        // A valid ISBN inside a longer identifier is not cut out.
+        assertNull(BookIdentity.unambiguousIsbn("197801403287219"))
+        assertNull(BookIdentity.unambiguousIsbn("Bestellnr. 9ll7831251715412"))
+        // Digits printed in groups under the barcode still join up.
+        assertEquals("9780863815805", BookIdentity.unambiguousIsbn("9 780863 815805"))
+        // Long stripe noise stays fast and finds nothing.
+        val started = System.nanoTime()
+        assertNull(BookIdentity.unambiguousIsbn(List(1_500) { "|" }.joinToString(" ") + " 123456789"))
+        assertTrue(System.nanoTime() - started < 500_000_000)
+    }
+    @Test fun printedIsbnAndOtherBarcodeOnOneLineStayAmbiguous() {
+        assertEquals(listOf("9780140328721", "9783125171541"), BookIdentity.isbnsInText("ISBN 9780140328721 9ll783125171541"))
+        assertNull(BookIdentity.unambiguousIsbn("ISBN 9780140328721 9ll783125171541"))
+        // The same edition printed and as barcode line is still one book.
+        assertEquals("9783125171541", BookIdentity.unambiguousIsbn("ISBN 3-12-517154-7 9ll783125171541"))
+    }
     @Test(expected = CancellationException::class) fun cancellationIsNotAnErrorResult() {
         catchingOperation { throw CancellationException("closed") }
     }
