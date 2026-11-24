@@ -89,24 +89,31 @@ fun SaleScreen(
                 style = MaterialTheme.typography.bodyMedium, color = scheme.error)
             if (shareFailed) Text("Teilen ist fehlgeschlagen. Wähle weniger Bücher aus und versuche es erneut.",
                 style = MaterialTheme.typography.bodyMedium, color = scheme.error)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // Side by side normally; from 130 % font each button gets the full width, so no label breaks mid-word.
+            val shareButton: @Composable (Modifier) -> Unit = { modifier ->
                 OutlinedButton(onClick = {
                     val send = Intent(Intent.ACTION_SEND).setType("text/plain")
                         .putExtra(Intent.EXTRA_SUBJECT, "Bücher für Momox")
                         .putExtra(Intent.EXTRA_TEXT, SaleList.shareText(chosen, System.currentTimeMillis()))
                     // A very long list can exceed what an intent may carry; say so instead of crashing.
                     shareFailed = runCatching { context.startActivity(Intent.createChooser(send, "Liste teilen")) }.isFailure
-                }, enabled = chosen.isNotEmpty(), modifier = Modifier.heightIn(min = 52.dp)) {
+                }, enabled = chosen.isNotEmpty(), modifier = modifier.heightIn(min = 52.dp)) {
                     Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.padding(end = 8.dp)); Text("Teilen")
                 }
+            }
+            val soldButton: @Composable (Modifier) -> Unit = { modifier ->
                 Button(onClick = {
                     busy = true; conflict = false
                     onMarkSold(chosen.associate { it.id to BookListQuery.offeredCents(it) }) { outcome -> busy = false; conflict = outcome == false }
-                }, enabled = chosen.isNotEmpty() && !busy,
-                    modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
+                }, enabled = chosen.isNotEmpty() && !busy, modifier = modifier.heightIn(min = 52.dp)) {
                     Icon(painterResource(R.drawable.ic_sold), contentDescription = null, modifier = Modifier.padding(end = 8.dp))
                     Text("Als verkauft markieren")
                 }
+            }
+            if (configuration.fontScale >= 1.3f) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                soldButton(Modifier.fillMaxWidth()); shareButton(Modifier.fillMaxWidth())
+            } else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                shareButton(Modifier); soldButton(Modifier.weight(1f))
             }
         }
     }
