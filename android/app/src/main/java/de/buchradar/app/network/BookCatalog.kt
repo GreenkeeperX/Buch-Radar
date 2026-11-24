@@ -169,13 +169,7 @@ object BookCatalog {
         }
         val primary = openLibrary.distinctBy { it.candidateId }
         if (!expandSources && primary.isNotEmpty()) return@search primary
-        val google = CatalogAccess.fetch("Google Books", "title:${title.take(250)}") { googleApi.search(title.take(250).trim(), 10) }?.items.orEmpty().mapNotNull { volume ->
-            val info = volume.volumeInfo ?: return@mapNotNull null
-            val cleanTitle = info.title?.trim()?.takeIf(String::isNotEmpty) ?: return@mapNotNull null
-            val validIsbn = info.identifiers.orEmpty().firstNotNullOfOrNull { BookIdentity.canonicalIsbn(it.identifier) }
-            CatalogBook(cleanTitle, info.authors.orEmpty().joinToString(", ").takeIf(String::isNotBlank), info.publishedDate?.take(4)?.toIntOrNull(), validIsbn,
-                (info.imageLinks?.thumbnail ?: info.imageLinks?.smallThumbnail)?.replace("http://", "https://"), sources = setOf("Google Books"))
-        }
+        val google = googleSearch("title:${title.take(250)}", title.take(250).trim(), 10)
         val combined = mergeCandidates(primary + google)
         val queryTokens = foldText(title).split(" ").filter { it.length >= 3 }.toSet()
         val hasStrongMatch = combined.any { book ->
@@ -185,6 +179,15 @@ object BookCatalog {
         if (!expandSources || (combined.size >= 3 && hasStrongMatch)) combined
         else mergeCandidates(combined + catchingOperation { dnbSearch("woe=${foldText(title)}") }.getOrDefault(emptyList()))
     }
+
+    private suspend fun googleSearch(cacheKey: String, query: String, maxResults: Int): List<CatalogBook> =
+        CatalogAccess.fetch("Google Books", cacheKey) { googleApi.search(query, maxResults) }?.items.orEmpty().mapNotNull { volume ->
+            val info = volume.volumeInfo ?: return@mapNotNull null
+            val cleanTitle = info.title?.trim()?.takeIf(String::isNotEmpty) ?: return@mapNotNull null
+            val validIsbn = info.identifiers.orEmpty().firstNotNullOfOrNull { BookIdentity.canonicalIsbn(it.identifier) }
+            CatalogBook(cleanTitle, info.authors.orEmpty().joinToString(", ").takeIf(String::isNotBlank), info.publishedDate?.take(4)?.toIntOrNull(), validIsbn,
+                (info.imageLinks?.thumbnail ?: info.imageLinks?.smallThumbnail)?.replace("http://", "https://"), sources = setOf("Google Books"))
+        }
 
     /** Fetches only a small, on-demand result set; DNB supplies bibliographic metadata, not covers. */
     private suspend fun dnbSearch(query: String): List<CatalogBook> = CatalogAccess.fetch("DNB", query) {
@@ -317,6 +320,7 @@ object BookCatalog {
         val candidates = mergeCandidates(queries.flatMapIndexed { index, query ->
             catchingOperation { findByTitle(query, expandSources = index < 2) }.getOrDefault(emptyList())
         })
+        authorOnlyName(boundedText, candidates)?.let { author -> return@search authorChoices(author, candidates) }
         val tokens = foldText(boundedText).split(Regex("[^\\p{L}\\p{N}]+")).filter { it.length >= 3 }.toSet()
         candidates.map { book ->
             val titleTokens = foldText(book.title).split(Regex("[^\\p{L}\\p{N}]+")).filter { it.length >= 3 }.toSet()
@@ -327,6 +331,51 @@ object BookCatalog {
             val score = titleMatch * .60f + authorMatch * .15f + evidenceCoverage * .25f
             book.copy(textSimilarity = (score * 100).toInt())
         }.sortedByDescending { it.textSimilarity ?: 0 }
+    }
+
+    private val genericSpineWords = setOf("roman", "romane", "band", "verlag", "taschenbuch", "erzahlung", "erzahlungen",
+        "thriller", "krimi", "kriminalroman", "ausgabe", "edition", "auflage", "neue", "der", "die", "das", "und", "the", "and")
+
+    private fun words(value: String): Set<String> = foldText(value).split(" ").filter { it.length >= 3 }.toSet()
+
+    /**
+     * The catalog name of the author when the recognized text names only an author (e.g. "Arthur Hailey" on a spine)
+     * and no candidate title is supported by the text. Then several of that author's books fit equally well.
+     */
+    internal fun authorOnlyName(text: String, candidates: List<CatalogBook>): String? {
+        val query = words(text) - genericSpineWords
+        if (query.isEmpty()) return null
+        // Single names in natural order first ("Arthur Hailey"), then whole fields such as DNB's "Hailey, Arthur".
+        val names = candidates.flatMap { book -> book.author.orEmpty().split(", ", ";") } +
+            candidates.mapNotNull { it.author }
+        return names.asSequence().map(String::trim).filter(String::isNotBlank).distinct()
+            .firstOrNull { name ->
+                val nameWords = words(name)
+                if (nameWords.isEmpty() || tokenCoverage(query, nameWords) < .8f || tokenCoverage(nameWords, query) < .5f) return@firstOrNull false
+                // A leftover word that some candidate title contains means a title was recognized after all.
+                val rest = query.filter { tokenCoverage(setOf(it), nameWords) == 0f }.toSet()
+                rest.isEmpty() || candidates.none { book -> tokenCoverage(rest, words(book.title) - genericSpineWords) >= .5f }
+            }
+    }
+
+    /** One entry per title first, so a short candidate list shows different books of the author before other editions. */
+    internal fun authorChoiceOrder(books: List<CatalogBook>): List<CatalogBook> {
+        val firstPerTitle = books.distinctBy { foldText(it.title) }
+        return firstPerTitle + books.filterNot { book -> firstPerTitle.any { it === book } }
+    }
+
+    private suspend fun authorChoices(author: String, found: List<CatalogBook>): List<CatalogBook> {
+        val nameWords = words(author)
+        val name = nameWords.sorted().joinToString(" ")
+        val byAuthor = googleSearch("author:$name", nameWords.joinToString(" ") { "inauthor:$it" }, 20) +
+            catchingOperation { dnbSearch("per=$name") }.getOrDefault(emptyList())
+        val books = mergeCandidates(found + byAuthor)
+            .filter { tokenCoverage(nameWords, words(it.author.orEmpty())) >= .8f }
+            // Equal text evidence for every title: no ranking label pretends that one of them was recognized.
+            .map { it.copy(textSimilarity = null) }
+            .sortedByDescending { (if (it.isbn != null) 2 else 0) + (if (it.coverUrl != null) 1 else 0) }
+        CatalogAccess.note("Nur der Autor wurde erkannt ($author). Welcher Titel ist es? Wähle ihn aus oder ergänze den Titel im Suchtext.")
+        return authorChoiceOrder(books)
     }
 
     /** Looks up isolated OCR blocks from several book spines without comparing the whole shelf as one cover. */

@@ -193,6 +193,11 @@ nach Messung an freigegebenen Scanbeispielen als bestätigt.
   Grenze 8; Regaltext nie zweimal identisch, daher Knopf gesperrt). Jetzt: Grenze 12,
   Helligkeitsänderung/Flackern wird herausgerechnet, Regal stabil ab 70 %
   Wortüberlappung. Kompaktere Bedienleisten im Querformat. Nachweis am Gerät offen.
+- Nur Autor erkannt (z. B. Rücken „Arthur Hailey“ ohne lesbaren Titel): Die Suche
+  fragt zusätzlich nach Büchern dieses Autors (Google Books `inauthor`, DNB `per`),
+  zeigt zuerst verschiedene Titel, dann weitere Ausgaben, ohne Trefferbewertung, und
+  weist mit einem Hinweis auf die nötige Auswahl hin. Kein automatisches Raten.
+  Grundlage sind JVM-Tests der Erkennungsregel; Wirkung am Gerät noch nicht gemessen.
 
 ## Externe Voraussetzungen
 - Der bisherige Momox-Zugang ist nicht als öffentliche Schnittstelle zugesichert.

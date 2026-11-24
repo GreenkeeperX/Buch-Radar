@@ -21,9 +21,11 @@ private class SourceTrace(budgetMillis: Long) : AbstractCoroutineContextElement(
     var successful = 0
     val failed = linkedSetOf<String>()
     val limited = linkedSetOf<String>()
+    val notes = linkedSetOf<String>()
     var budgetExhausted = false
     fun remaining() = (deadline - System.nanoTime() / 1_000_000).coerceAtLeast(0)
     fun warnings() = buildList {
+        addAll(notes)
         if (failed.isNotEmpty()) add("Nicht alle Quellen erreichbar: ${failed.joinToString()}. Treffer können fehlen.")
         if (limited.isNotEmpty()) add("Anfragelimit erreicht: ${limited.joinToString()}. Diese Quelle wird später wieder gefragt; Treffer können fehlen.")
         if (budgetExhausted) add("Zeitlimit erreicht. Bisherige Treffer bleiben erhalten; bei Bedarf erneut suchen.")
@@ -59,6 +61,11 @@ internal object CatalogAccess {
                 throw CatalogUnavailable("Katalog nicht erreichbar: ${trace.failed.joinToString()}. Bitte erneut versuchen.")
             CatalogResult(result, trace.warnings())
         }
+    }
+
+    /** A hint about the result itself (not a source failure), shown with the search warnings. */
+    suspend fun note(text: String) {
+        coroutineContext[SourceTrace]?.notes?.add(text)
     }
 
     @Suppress("UNCHECKED_CAST")

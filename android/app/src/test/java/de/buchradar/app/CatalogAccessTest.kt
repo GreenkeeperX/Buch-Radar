@@ -73,4 +73,13 @@ class CatalogAccessTest {
         job.cancelAndJoin()
         assertFalse(returned)
     }
+
+    @Test fun resultNotesAreReportedWithoutFailingTheSearch() = runBlocking {
+        val result = CatalogAccess.report {
+            CatalogAccess.note("Nur der Autor wurde erkannt.")
+            CatalogAccess.fetch(source(), "ok") { "Treffer" }
+        }
+        assertEquals("Treffer", result.value)
+        assertEquals(listOf("Nur der Autor wurde erkannt."), result.warnings)
+    }
 }
