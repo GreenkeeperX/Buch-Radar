@@ -120,7 +120,11 @@ private val AppTypography = base.copy(
     titleMedium = base.titleMedium.copy(fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold),
     bodyLarge = base.bodyLarge.copy(fontSize = 17.sp, lineHeight = 24.sp),
     bodyMedium = base.bodyMedium.copy(fontSize = 15.sp, lineHeight = 21.sp),
-    labelLarge = base.labelLarge.copy(fontSize = 15.sp, lineHeight = 20.sp)
+    labelLarge = base.labelLarge.copy(fontSize = 15.sp, lineHeight = 20.sp),
+    // Material's small styles (11–12 sp) are used by text-field labels, chips and notes: keep them readable.
+    labelMedium = base.labelMedium.copy(fontSize = 14.sp, lineHeight = 20.sp),
+    labelSmall = base.labelSmall.copy(fontSize = 13.sp, lineHeight = 18.sp),
+    bodySmall = base.bodySmall.copy(fontSize = 14.sp, lineHeight = 20.sp)
 )
 
 @Composable

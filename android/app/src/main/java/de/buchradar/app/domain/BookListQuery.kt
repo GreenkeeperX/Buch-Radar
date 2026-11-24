@@ -40,7 +40,7 @@ object BookListQuery {
         .trim()
 
     fun matchesStatus(book: BookEntity, filter: String): Boolean = when (filter) {
-        FILTER_AVAILABLE -> book.momoxStatus == "AVAILABLE"
+        FILTER_AVAILABLE -> offeredCents(book) != null
         FILTER_UNAVAILABLE -> book.momoxStatus == "NOT_AVAILABLE"
         FILTER_UNCHECKED -> book.isbn.isNotBlank() && book.lastCheckedAt == null
         FILTER_ERROR -> book.lastAttemptStatus == "ERROR" || book.momoxStatus == "ERROR"
@@ -48,7 +48,8 @@ object BookListQuery {
     }
 
     /** Price that is currently offered; other states never count as a price. */
-    fun offeredCents(book: BookEntity): Int? = book.currentPriceCents?.takeIf { book.momoxStatus == "AVAILABLE" }
+    /** The offer a sale can count on: an available book with a positive price. Overview and sale list share it. */
+    fun offeredCents(book: BookEntity): Int? = book.currentPriceCents?.takeIf { book.momoxStatus == "AVAILABLE" && it > 0 }
 
     fun apply(books: List<BookEntity>, query: String, filter: String, sort: String, soldView: Boolean): List<BookEntity> {
         val terms = fold(query).split(' ').filter(String::isNotBlank)
@@ -110,6 +111,9 @@ object BookInputFormat {
     // the remaining digits. Input is normalised only when it is submitted.
 
     fun displayIsbn(value: String): String = parseIsbn(value)?.toString() ?: value
+
+    /** On screen: "ISBN" plus the number joined by non-breaking hyphens, so large fonts never split the number. */
+    fun screenIsbn(value: String): String = "ISBN\u00A0" + displayIsbn(value).replace('-', '\u2011')
 }
 
 enum class MessageTone { INFO, SUCCESS, ERROR, PROGRESS }

@@ -19,5 +19,23 @@ class MomoxResponseTest {
     @Test(expected = MomoxCheckException::class) fun overflowRejected() { MomoxCatalog.validateOffer(isbn, offer(price = "99999999999999")) }
     @Test(expected = MomoxCheckException::class) fun fractionalCentsRejected() { MomoxCatalog.validateOffer(isbn, offer(price = "1.234")) }
     @Test(expected = MomoxCheckException::class) fun unknownSchemaIsNotNoOffer() { MomoxCatalog.validateOffer(isbn, offer().copy(status = "new-format")) }
+    @Test fun unknownStatusIsNamedInMessage() {
+        val error = assertThrows(MomoxCheckException::class.java) { MomoxCatalog.validateOffer(isbn, offer().copy(status = "max_reached")) }
+        assertTrue(error.message!!.contains("„max_reached“"))
+        assertTrue(error.unknownFormat)
+        assertFalse(error.pauseQueue)
+    }
+    @Test fun missingStatusIsReported() {
+        val error = assertThrows(MomoxCheckException::class.java) { MomoxCatalog.validateOffer(isbn, MomoxOfferResponse(null, null, null, null)) }
+        assertTrue(error.message!!.startsWith("Momox-Antwort ohne Status"))
+    }
+    @Test fun oddStatusCharactersAreStripped() {
+        assertEquals(MomoxCatalog.unknownFormatMessage("<b>x</b>"), MomoxCatalog.unknownFormatMessage("bxb"))
+    }
+    @Test fun productErrorMeansMomoxDoesNotKnowTheBook() {
+        val check = MomoxCatalog.validateOffer(isbn, MomoxOfferResponse("product_error", null, null, null))
+        assertEquals("UNKNOWN", check.status)
+        assertNull(check.priceCents)
+    }
     @Test fun knownNoOffer() { assertEquals("NOT_AVAILABLE", MomoxCatalog.validateOffer(isbn, MomoxOfferResponse("no_offer", null, null, null)).status) }
 }

@@ -58,6 +58,8 @@ virtuellen Umgebung installieren, dann im Ordner `backend`:
   textgestützte Kandidatensuche mit experimentellem Bildvergleich, keine Bildsuchmaschine.
 - GPL-3.0-only erhalten. Keine Zugangswerte, privaten Bilder, Listen, Gerätekennungen
   oder lokalen Pfade veröffentlichen; auch APK-Inhalte prüfen.
+  `tools/check-secrets.sh` läuft in CI und als Commit-Hook
+  (`git config core.hooksPath tools/githooks`, einmal je Klon); Funde nie umgehen.
 
 Arbeite die offenen Review-Aufgaben weiter ab. Ein grüner Build erledigt weder den
 gesamten Review noch den Nachweis guter Regal-/Covererkennung. Fertige geprüfte

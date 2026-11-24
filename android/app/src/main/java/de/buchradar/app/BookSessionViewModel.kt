@@ -44,6 +44,9 @@ class BookSessionViewModel(application: Application) : AndroidViewModel(applicat
     val deletingBook = mutableStateOf<BookEntity?>(null)
     val pendingUndo = mutableStateOf<PendingUndo?>(null)
     val settingsOpen = mutableStateOf(false)
+    val saleOpen = mutableStateOf(false)
+    /** Ids chosen on the sale screen; kept here rather than in the saved state, which large lists would overflow. */
+    val saleDraft = mutableStateOf<List<String>?>(null)
     val showSoldBooks = mutableStateOf(false)
     val selectionMode = mutableStateOf(false)
     val selectedIsbns = mutableStateOf<Set<String>>(emptySet())
@@ -54,12 +57,15 @@ class BookSessionViewModel(application: Application) : AndroidViewModel(applicat
     val momoxCheckMode = mutableStateOf("stale")
 }
 
-/** Actions the snackbar can still undo: removed book rows and books marked as sold. */
-class PendingUndo(val text: String, val deleted: List<BookEntity> = emptyList(), val soldIds: List<String> = emptyList()) {
+/**
+ * Actions the snackbar can still undo: removed book rows and books marked as sold. [sold] maps
+ * each id to the date its sale wrote, so undo only touches rows that still carry that sale.
+ */
+class PendingUndo(val text: String, val deleted: List<BookEntity> = emptyList(), val sold: Map<String, Long> = emptyMap()) {
     /** A further action while an earlier one can still be undone joins it, so the earlier action keeps its undo. */
     operator fun plus(next: PendingUndo): PendingUndo {
         val rows = (deleted + next.deleted).distinctBy { it.id }
-        val sold = (soldIds + next.soldIds).distinct()
+        val sold = sold + next.sold
         val text = listOfNotNull(
             rows.size.takeIf { it > 0 }?.let { if (it == 1) "1 Buch entfernt" else "$it Bücher entfernt" },
             sold.size.takeIf { it > 0 }?.let { if (it == 1) "1 als verkauft markiert" else "$it als verkauft markiert" }

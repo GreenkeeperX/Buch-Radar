@@ -5,6 +5,8 @@ import kotlinx.coroutines.flow.Flow
 
 /** [BookDao.updateBook] result: the new ISBN belongs to another entry. */
 const val ISBN_TAKEN = -1
+/** Ids per statement, below SQLite's 999 bound values. */
+const val SQL_CHUNK = 500
 
 @Dao
 interface BookDao {
@@ -109,7 +111,48 @@ interface BookDao {
     suspend fun updateCheck(isbn: String, status: String, price: Int?, checkedAt: Long)
 
     @Query("UPDATE books SET soldAt = :soldAt WHERE id IN (:ids)")
-    suspend fun updateSoldStatus(ids: List<String>, soldAt: Long?): Int
+    suspend fun updateSoldStatusRaw(ids: List<String>, soldAt: Long?): Int
+
+    @Query("SELECT * FROM books WHERE id IN (:ids)")
+    suspend fun getByIds(ids: List<String>): List<BookEntity>
+
+    @Query("UPDATE books SET soldAt = NULL WHERE id IN (:ids) AND soldAt = :soldAt")
+    suspend fun clearSoldAtRaw(ids: List<String>, soldAt: Long): Int
+
+    /** Sets or clears [soldAt] for any number of books; SQLite allows only 999 bound values per statement. */
+    @Transaction
+    suspend fun updateSoldStatus(ids: List<String>, soldAt: Long?): Int =
+        ids.distinct().chunked(SQL_CHUNK).sumOf { updateSoldStatusRaw(it, soldAt) }
+
+    /**
+     * Marks active books sold at [soldAt] and returns the ids actually changed; a book sold
+     * meanwhile keeps its own date. With [expectedCents] (id to the offer shown when the user
+     * chose) the sale is all or nothing: if any book is gone, sold or at another offer, nothing
+     * is written and null comes back, so the user decides again on current prices.
+     */
+    @Transaction
+    suspend fun markSold(ids: List<String>, soldAt: Long, expectedCents: Map<String, Int?>? = null): List<String>? {
+        val wanted = ids.distinct()
+        val rows = wanted.chunked(SQL_CHUNK).flatMap { getByIds(it) }
+        if (expectedCents != null) {
+            val byId = rows.associateBy { it.id }
+            val unchanged = wanted.all { id ->
+                val book = byId[id] ?: return@all false
+                book.soldAt == null && book.currentPriceCents?.takeIf { book.momoxStatus == "AVAILABLE" && it > 0 } == expectedCents[id]
+            }
+            if (!unchanged) return null
+        }
+        val ready = rows.filter { it.soldAt == null }.map { it.id }
+        ready.chunked(SQL_CHUNK).forEach { updateSoldStatusRaw(it, soldAt) }
+        return ready
+    }
+
+    /** Undo of sales (id to that sale's date) in one transaction: only rows still carrying that date return. */
+    @Transaction
+    suspend fun undoSales(sold: Map<String, Long>): Int =
+        sold.entries.groupBy({ it.value }, { it.key }).entries.sumOf { (soldAt, ids) ->
+            ids.chunked(SQL_CHUNK).sumOf { clearSoldAtRaw(it, soldAt) }
+        }
 
     @Query("UPDATE books SET lastError = :message WHERE isbn = :isbn")
     suspend fun setCheckError(isbn: String, message: String?)

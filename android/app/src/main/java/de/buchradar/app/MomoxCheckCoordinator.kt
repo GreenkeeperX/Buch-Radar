@@ -12,6 +12,8 @@ import kotlinx.coroutines.sync.withLock
 
 /** All producers share one durable queue. Only the worker consumes it. */
 object MomoxCheckCoordinator {
+    /** Unreadable Momox answers in a row before the whole queue pauses. */
+    const val UNKNOWN_FORMAT_PAUSE = 3
     private val consumer = Mutex()
 
     suspend fun enqueue(context: Context, books: List<BookEntity>, notify: Boolean = false) {
@@ -30,6 +32,12 @@ object MomoxCheckCoordinator {
             dao.saveRun(run)
         }
         MomoxWorkScheduler.drain(context)
+    }
+
+    /** A run paused only because an earlier build had no access continues once this build has one. */
+    suspend fun resumeIfAccessArrived(context: Context) {
+        if (BuildConfig.MOMOX_API_TOKEN.isBlank()) return
+        if (BuchRadarDatabase.get(context).bookDao().getRun()?.pausedReason == MomoxCatalog.MISSING_ACCESS) resume(context)
     }
 
     suspend fun resume(context: Context) {
@@ -54,6 +62,8 @@ object MomoxCheckCoordinator {
         val db = BuchRadarDatabase.get(context)
         val dao = db.bookDao()
         val deadline = android.os.SystemClock.elapsedRealtime() + 4 * 60_000L
+        // Unreadable answers in a row: one marks only its book, several mean Momox changed and pause the queue.
+        var unknownInRow = 0
         while (android.os.SystemClock.elapsedRealtime() < deadline) {
             if (dao.getRun()?.pausedReason != null) return@withLock false
             val item = dao.nextCheck() ?: return@withLock false
@@ -68,7 +78,9 @@ object MomoxCheckCoordinator {
             val check = result.getOrNull()
             val error = result.exceptionOrNull()
             val failure = error as? MomoxCheckException
-            if (error != null && failure?.pauseQueue == true) {
+            unknownInRow = if (failure?.unknownFormat == true) unknownInRow + 1 else 0
+            val pause = failure?.pauseQueue == true || unknownInRow >= UNKNOWN_FORMAT_PAUSE
+            if (error != null && pause) {
                 val current = db.withTransaction {
                     // A book sold or replaced during the request no longer decides about the queue;
                     // the next loop pass finishes its task and the following book reports the error itself.
@@ -76,7 +88,9 @@ object MomoxCheckCoordinator {
                         dao.findByIsbn(item.isbn)?.let { it.createdAt == item.bookCreatedAt && it.soldAt == null } == true
                     if (stillQueued) {
                         dao.getRun()?.takeIf { it.finishedAt == null }?.let {
-                            dao.saveRun(it.copy(pausedReason = error.message ?: "Zugriff prüfen"))
+                            dao.saveRun(it.copy(pausedReason = if (failure?.unknownFormat == true)
+                                "$UNKNOWN_FORMAT_PAUSE Momox-Antworten in Folge nicht lesbar (zuletzt: ${error.message}); Prüfung angehalten."
+                                else error.message ?: "Zugriff prüfen"))
                         }
                     }
                     stillQueued
@@ -94,7 +108,7 @@ object MomoxCheckCoordinator {
                 continue
             }
             finish(db, item, check?.status ?: "ERROR", check?.priceCents, error?.message)
-            AppLog.add(context, "Momox: ${check?.status ?: "ERROR"}")
+            AppLog.add(context, "Momox: ${check?.status ?: "ERROR"}" + if (failure?.unknownFormat == true) " (${error.message})" else "")
             delay(1_000)
         }
         dao.pendingCount() > 0
@@ -120,8 +134,9 @@ object MomoxCheckCoordinator {
             dao.saveRun(run.copy(
                 completed = run.completed + 1,
                 available = run.available + if (valid && status == "AVAILABLE") 1 else 0,
-                unavailable = run.unavailable + if (valid && status == "NOT_AVAILABLE") 1 else 0,
-                failed = run.failed + if (valid && status !in listOf("AVAILABLE", "NOT_AVAILABLE")) 1 else 0,
+                // "Bei Momox unbekannt" is an answer without buy-back, not a failed check.
+                unavailable = run.unavailable + if (valid && status in listOf("NOT_AVAILABLE", "UNKNOWN")) 1 else 0,
+                failed = run.failed + if (valid && status !in listOf("AVAILABLE", "NOT_AVAILABLE", "UNKNOWN")) 1 else 0,
                 valueCents = run.valueCents + if (valid && status == "AVAILABLE") (price ?: 0).toLong() else 0,
                 finishedAt = if (dao.pendingCount() == 0) System.currentTimeMillis() else null
             ))

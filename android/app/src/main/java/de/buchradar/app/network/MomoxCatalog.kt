@@ -42,6 +42,8 @@ private interface MomoxApi {
 }
 
 object MomoxCatalog {
+    /** Pause reason of a build without access; a later build with access resumes such a run. */
+    const val MISSING_ACCESS = "Momox-Zugang ist für diesen Build nicht eingerichtet."
     private const val TAG = "BuchRadar.Momox"
     private val api: MomoxApi by lazy {
         val moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).build()
@@ -53,7 +55,7 @@ object MomoxCatalog {
     }
 
     suspend fun check(isbn: String): MomoxCheck {
-        if (BuildConfig.MOMOX_API_TOKEN.isBlank()) throw MomoxCheckException("Momox-Zugang ist für diesen Build nicht eingerichtet.", null, retryable = false, pauseQueue = true)
+        if (BuildConfig.MOMOX_API_TOKEN.isBlank()) throw MomoxCheckException(MISSING_ACCESS, null, retryable = false, pauseQueue = true)
         val startedAt = SystemClock.elapsedRealtime()
         val response = try {
             api.offer(BookIdentity.canonicalIsbn(isbn) ?: throw IllegalArgumentException("Ungültige ISBN"), BuildConfig.MOMOX_API_TOKEN)
@@ -63,7 +65,15 @@ object MomoxCatalog {
             val code = error.code()
             Log.w(TAG, "HTTP $code after ${SystemClock.elapsedRealtime() - startedAt} ms")
             throw MomoxCheckException(httpFailureMessage(code), error, retryable = code == 429 || code >= 500, pauseQueue = code in listOf(401, 403, 404), retryAfterSeconds = error.response()?.headers()?.get("Retry-After")?.toLongOrNull())
+        } catch (error: com.squareup.moshi.JsonDataException) {
+            // Readable JSON with unexpected types: the same "unreadable answer" rule as an unknown status.
+            Log.w(TAG, "Unreadable response: ${error.javaClass.simpleName}")
+            throw MomoxCheckException("Momox-Antwort nicht lesbar (unerwartete Felder)", error, retryable = false, unknownFormat = true)
         } catch (error: IOException) {
+            if (error is com.squareup.moshi.JsonEncodingException) {
+                Log.w(TAG, "Unreadable response: ${error.javaClass.simpleName}")
+                throw MomoxCheckException("Momox-Antwort nicht lesbar (kein gültiges JSON)", error, retryable = false, unknownFormat = true)
+            }
             val category = when (error) {
                 is UnknownHostException -> "DNS: Momox-Server nicht erreichbar"
                 is SocketTimeoutException -> "Timeout: Momox antwortet nicht rechtzeitig"
@@ -103,8 +113,21 @@ object MomoxCatalog {
             }
             "no_offer" -> MomoxCheck("NOT_AVAILABLE", null, response.product?.title)
             "unknown" -> MomoxCheck("UNKNOWN", null, response.product?.title)
-            else -> throw MomoxCheckException("Unbekanntes Momox-Antwortformat", retryable = false, pauseQueue = true)
+            // Seen on the device (2026-11-24): Momox cannot match this ISBN to an article it buys.
+            // A final answer for this book, like "unknown"; no retry, no pause.
+            "product_error" -> MomoxCheck("UNKNOWN", null, response.product?.title)
+            // One odd answer marks only this book; the coordinator pauses after several in a row.
+            else -> throw MomoxCheckException(unknownFormatMessage(response.status), retryable = false, unknownFormat = true)
         }
+    }
+
+    /**
+     * Momox answered with HTTP 200 but a status the app does not know (or none). Nothing is guessed
+     * ("kein Angebot" would be wrong); the received status is named so the cause is visible.
+     */
+    internal fun unknownFormatMessage(status: String?): String {
+        val shown = status?.filter { it.isLetterOrDigit() || it == '_' || it == '-' }?.take(40)?.takeIf(String::isNotBlank)
+        return if (shown == null) "Momox-Antwort ohne Status" else "Unbekannter Momox-Status „$shown“"
     }
 
     private fun httpFailureMessage(code: Int): String = when (code) {
@@ -115,4 +138,6 @@ object MomoxCatalog {
     }
 }
 
-class MomoxCheckException(message: String, cause: Throwable? = null, val retryable: Boolean = true, val pauseQueue: Boolean = false, val retryAfterSeconds: Long? = null) : Exception(message, cause)
+/** [unknownFormat]: an answer the app cannot read; the book gets an error, repeated ones pause the queue. */
+class MomoxCheckException(message: String, cause: Throwable? = null, val retryable: Boolean = true, val pauseQueue: Boolean = false,
+    val retryAfterSeconds: Long? = null, val unknownFormat: Boolean = false) : Exception(message, cause)

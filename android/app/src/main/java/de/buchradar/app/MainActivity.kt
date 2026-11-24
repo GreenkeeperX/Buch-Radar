@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package de.buchradar.app
 
 import androidx.compose.ui.input.key.type
@@ -29,7 +31,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -39,6 +40,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -54,6 +56,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
@@ -93,6 +96,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -163,12 +167,36 @@ class MainActivity : ComponentActivity() {
                 }
                 val database = remember(context) { BuchRadarDatabase.get(context) }
                 val dao = remember(database) { database.bookDao() }
+                LaunchedEffect(Unit) { catchingOperation { MomoxCheckCoordinator.resumeIfAccessArrived(context) } }
                 val books by dao.observeAll().collectAsState(initial = emptyList())
                 val soldBooks by dao.observeSold().collectAsState(initial = emptyList())
                 val pendingIsbns by dao.observePendingIsbns().collectAsState(initial = emptyList())
                 val pendingSet = remember(pendingIsbns) { pendingIsbns.toSet() }
                 val bookListState = rememberLazyListState()
                 val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+                // From 130 % system font the list gets the same space-saving layout as landscape.
+                val largeFont = LocalConfiguration.current.fontScale >= 1.3f
+                // From 170 % the filter chips would fill the screen; one filter menu replaces them.
+                val hugeFont = LocalConfiguration.current.fontScale >= 1.7f
+                var filterMenuOpen by remember { mutableStateOf(false) }
+                // The scan button steps aside while the list scrolls down, so it never covers a card's
+                // status for long; it returns on scrolling up, at the top and at the end of the list.
+                var fabShown by remember { mutableStateOf(true) }
+                LaunchedEffect(bookListState) {
+                    var last = 0 to 0
+                    snapshotFlow { Triple(bookListState.firstVisibleItemIndex, bookListState.firstVisibleItemScrollOffset, bookListState.canScrollForward) }
+                        .collect { (index, offset, more) ->
+                            val down = index > last.first || (index == last.first && offset > last.second + 24)
+                            val up = index < last.first || (index == last.first && offset < last.second - 24)
+                            if (down || up) last = index to offset
+                            fabShown = when {
+                                index == 0 && offset == 0 || !more -> true
+                                down -> false
+                                up -> true
+                                else -> fabShown
+                            }
+                        }
+                }
                 val session: BookSessionViewModel = viewModel()
                 val scope = session.viewModelScope
                 val uiScope = rememberCoroutineScope()
@@ -207,6 +235,7 @@ class MainActivity : ComponentActivity() {
                 var summaryExpanded by session.summaryExpanded
                 var dismissedSummaryRun by session.dismissedSummaryRun
                 var settingsOpen by session.settingsOpen
+                var saleOpen by session.saleOpen
                 var showSoldBooks by session.showSoldBooks
                 var selectionMode by session.selectionMode
                 var selectedIsbns by session.selectedIsbns
@@ -241,7 +270,7 @@ class MainActivity : ComponentActivity() {
                 // The snackbar host belongs to the list screen: while details or settings cover it, the
                 // undo waits instead of timing out unseen, and the 12 s start again once the list is back.
                 val pendingUndo = session.pendingUndo.value
-                val undoHostVisible = !settingsOpen && detailsBook == null
+                val undoHostVisible = !settingsOpen && !saleOpen && detailsBook == null
                 LaunchedEffect(pendingUndo, undoHostVisible) {
                     val undo = pendingUndo ?: return@LaunchedEffect
                     if (!undoHostVisible) return@LaunchedEffect
@@ -257,7 +286,7 @@ class MainActivity : ComponentActivity() {
                             val skipped = undo.deleted.count { book -> dao.insert(book) == -1L }
                             if (skipped > 0) message = if (skipped == 1) "Nicht wiederhergestellt: Diese ISBN ist inzwischen wieder in der Liste."
                                 else "$skipped Bücher nicht wiederhergestellt: Ihre ISBN ist inzwischen wieder in der Liste."
-                            if (undo.soldIds.isNotEmpty()) dao.updateSoldStatus(undo.soldIds, null)
+                            if (undo.sold.isNotEmpty()) dao.undoSales(undo.sold)
                         }
                         if (outcome.isFailure) message = "Rückgängig machen fehlgeschlagen."
                     }
@@ -353,16 +382,28 @@ class MainActivity : ComponentActivity() {
                             else "Zurückholen fehlgeschlagen. Bitte erneut versuchen."
                     }
                 }
-                val markSold: (List<String>) -> Unit = { ids ->
+                // Marks only books that are still active; from the sale screen all or nothing at the shown
+                // offers. The undo and the message name exactly the rows that changed.
+                // onDone: null = failed, false = offers changed (nothing written), true = written.
+                val markSoldChecked: (List<String>, Map<String, Int?>?, (Boolean?) -> Unit) -> Unit = { ids, expected, onDone ->
                     scope.launch {
-                        val marked = catchingOperation { dao.updateSoldStatus(ids, System.currentTimeMillis()) }
+                        val soldAt = System.currentTimeMillis()
+                        val marked = catchingOperation { dao.markSold(ids, soldAt, expected) }
+                        val changed = marked.getOrNull()
                         if (marked.isFailure) message = "Markieren fehlgeschlagen. Bitte erneut versuchen."
-                        else {
-                            val undo = PendingUndo(if (ids.size == 1) "Als verkauft markiert" else "${ids.size} Bücher als verkauft markiert", soldIds = ids)
-                            session.pendingUndo.value = session.pendingUndo.value?.plus(undo) ?: undo
+                        else if (changed != null) {
+                            if (changed.isNotEmpty()) {
+                                val undo = PendingUndo(if (changed.size == 1) "Als verkauft markiert" else "${changed.size} Bücher als verkauft markiert",
+                                    sold = changed.associateWith { soldAt })
+                                session.pendingUndo.value = session.pendingUndo.value?.plus(undo) ?: undo
+                            }
+                            val skipped = ids.distinct().size - changed.size
+                            if (skipped > 0) message = if (skipped == 1) "1 Buch war schon als verkauft markiert." else "$skipped Bücher waren schon als verkauft markiert."
                         }
+                        onDone(if (marked.isFailure) null else changed != null)
                     }
                 }
+                val markSold: (List<String>) -> Unit = { ids -> markSoldChecked(ids, null) {} }
                 val deleteBook: (BookEntity) -> Unit = { book ->
                     scope.launch {
                         // Undo restores the row as it was deleted, including a check finished meanwhile.
@@ -382,7 +423,7 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(checkRun) {
                     checkRun?.let { run ->
                         if (run.finishedAt != null && run.pausedReason == null && run.startedAt != dismissedSummaryRun) {
-                            momoxSummary = MomoxSummary(run.available, run.unavailable, run.failed, run.valueCents.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+                            momoxSummary = MomoxSummary(run.available, run.unavailable, run.failed, run.valueCents)
                         }
                     }
                 }
@@ -425,6 +466,20 @@ class MainActivity : ComponentActivity() {
                     SettingsScreen(themeMode, { themeMode = it }, { settingsOpen = false })
                     return@BuchRadarTheme
                 }
+                if (saleOpen) {
+                    val draft = session.saleDraft
+                    SaleScreen(books, chosenIds = draft.value, onChosenChange = { draft.value = it },
+                        onClose = { saleOpen = false }, onRecheck = runMomoxCheck,
+                        onMarkSold = { expected, onResult ->
+                            val sent = draft.value
+                            markSoldChecked(expected.keys.toList(), expected) { outcome ->
+                                onResult(outcome)
+                                // Only the draft that was sent closes; a newer one opened meanwhile stays.
+                                if (outcome == true && draft.value === sent) saleOpen = false
+                            }
+                        })
+                    return@BuchRadarTheme
+                }
                 detailsBook?.let { original ->
                     val current = (books + soldBooks).firstOrNull { it.id == original.id } ?: original
                     BookDetailsScreen(current, onClose = { detailsBook = null },
@@ -444,8 +499,9 @@ class MainActivity : ComponentActivity() {
                     snackbarHost = { SnackbarHost(snackbar) },
                     floatingActionButton = {
                         // Collapses to the camera icon once the list scrolls and in landscape, so it covers less.
-                        if (onListScreen && !showSoldBooks && !selectionMode && searchInput.isBlank()) ExtendedFloatingActionButton(
-                            expanded = !landscape && bookListState.firstVisibleItemIndex == 0,
+                        // From 170 % font the scan action sits in the top bar instead, so nothing floats over the cards.
+                        if (onListScreen && !showSoldBooks && !selectionMode && searchInput.isBlank() && fabShown && !hugeFont) ExtendedFloatingActionButton(
+                            expanded = !landscape && !largeFont && bookListState.firstVisibleItemIndex == 0,
                             onClick = { if (!isSearching) openScanner(ScannerMode.AUTOMATIC) },
                             icon = { Icon(painterResource(R.drawable.ic_camera), contentDescription = "Buch oder Regal scannen") },
                             text = { Text("Buch oder Regal scannen", style = MaterialTheme.typography.titleMedium) }
@@ -490,6 +546,9 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
                                 } else if (onListScreen) {
+                                    if (hugeFont && !showSoldBooks) IconButton(onClick = { if (!isSearching) openScanner(ScannerMode.AUTOMATIC) }) {
+                                        Icon(painterResource(R.drawable.ic_camera), contentDescription = "Buch oder Regal scannen")
+                                    }
                                     IconButton(onClick = { settingsOpen = true }) { Icon(Icons.Filled.Settings, contentDescription = "Einstellungen öffnen") }
                                 }
                             }
@@ -725,8 +784,8 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     } else Column(Modifier.fillMaxSize().padding(padding)) {
-                        // In landscape the fixed area may take at most 40 % of the height and scrolls itself.
-                        Column(Modifier.then(if (landscape) Modifier.heightIn(max = (LocalConfiguration.current.screenHeightDp * .4f).dp).verticalScroll(rememberScrollState()) else Modifier)
+                        // In landscape and with large fonts the fixed area may take at most 40 % of the height and scrolls itself.
+                        Column(Modifier.then(if (landscape || largeFont) Modifier.heightIn(max = (LocalConfiguration.current.screenHeightDp * .4f).dp).verticalScroll(rememberScrollState()) else Modifier)
                             .padding(horizontal = 16.dp).padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             if (!selectionMode) OutlinedTextField(
                                     value = searchInput,
@@ -796,7 +855,8 @@ class MainActivity : ComponentActivity() {
                             // Overview, Momox action and chips scroll away so long lists keep their space.
                             item(key = LIST_HEADER_KEY) {
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    if (books.isNotEmpty() || showSoldBooks) ListOverview(if (showSoldBooks) "Verkaufte Bücher" else "Meine Bücher", totals, showValue = !showSoldBooks)
+                                    if (books.isNotEmpty() || showSoldBooks) ListOverview(if (showSoldBooks) "Verkaufte Bücher" else "Meine Bücher", totals, showValue = !showSoldBooks,
+                                        onSell = if (!showSoldBooks && !selectionMode) ({ keyboard?.hide(); session.saleDraft.value = null; saleOpen = true }) else null)
                                     // Progress and controls follow the run, even if no active book is left.
                                     if (!showSoldBooks && (books.isNotEmpty() || isCheckingMomox || momoxSummary != null)) {
                                         if (isCheckingMomox) Card(colors = CardDefaults.cardColors(containerColor = colorScheme.secondaryContainer), modifier = Modifier.fillMaxWidth()) {
@@ -834,9 +894,25 @@ class MainActivity : ComponentActivity() {
                                             }
                                         }
                                         if (showSoldBooks) Text(BookListQuery.sortLabel(sortMode), style = MaterialTheme.typography.labelLarge, color = colorScheme.onSurfaceVariant)
-                                        else Row(
-                                            Modifier.weight(1f).horizontalScroll(rememberScrollState()),
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically
+                                        else if (hugeFont) Box(Modifier.weight(1f)) {
+                                            val current = BookListQuery.filters.firstOrNull { it.first == statusFilter } ?: BookListQuery.filters.first()
+                                            OutlinedButton(onClick = { filterMenuOpen = true }, modifier = Modifier.heightIn(min = 48.dp)) {
+                                                Text("Filter: ${current.second} ${books.count { BookListQuery.matchesStatus(it, current.first) }}")
+                                                Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
+                                            }
+                                            DropdownMenu(expanded = filterMenuOpen, onDismissRequest = { filterMenuOpen = false }) {
+                                                BookListQuery.filters.forEach { (key, label) ->
+                                                    val count = books.count { BookListQuery.matchesStatus(it, key) }
+                                                    if (key == BookListQuery.FILTER_ALL || count > 0 || statusFilter == key) DropdownMenuItem(
+                                                        text = { Text("$label $count") }, onClick = { statusFilter = key; filterMenuOpen = false },
+                                                        trailingIcon = if (key == statusFilter) { { Icon(Icons.Filled.Check, contentDescription = "Ausgewählt") } } else null)
+                                                }
+                                            }
+                                        }
+                                        // Chips wrap instead of scrolling sideways, so no filter hides past the edge.
+                                        else FlowRow(
+                                            Modifier.weight(1f),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                                         ) {
                                             // Counts on the chips; empty filters are hidden unless selected.
                                             BookListQuery.filters.forEach { (key, label) ->
