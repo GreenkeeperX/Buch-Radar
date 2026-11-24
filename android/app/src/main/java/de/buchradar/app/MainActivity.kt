@@ -592,7 +592,15 @@ class MainActivity : ComponentActivity() {
                             items(groups, key = { "shelf-${it.id}" }) { group ->
                                 Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = colorScheme.surfaceContainer)) {
                                     Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        Text("Erkannt: ${group.query}", style = MaterialTheme.typography.titleMedium)
+                                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                                            Text("Erkannt: ${group.query}", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f).padding(top = 12.dp))
+                                            // A misread spine is not a book: drop it without adding anything. Placed at the
+                                            // top because a find can list several long candidates.
+                                            TextButton(onClick = {
+                                                session.shelfReview.complete(group.id)
+                                                if (shelfEditQuery == group.id) shelfEditQuery = null
+                                            }) { Text("Verwerfen", color = colorScheme.error) }
+                                        }
                                         if (group.pending) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                             LinearProgressIndicator(Modifier.weight(1f)); Text("Suche läuft …", style = MaterialTheme.typography.bodyMedium)
                                         }
@@ -649,17 +657,10 @@ class MainActivity : ComponentActivity() {
                                                 shelfEditText = group.query
                                             }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.Edit, null, Modifier.padding(end = 6.dp)); Text("Text ändern") }
                                         }
-                                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                            TextButton(onClick = {
-                                                session.shelfReview.postpone(group.id)
-                                                if (shelfEditQuery == group.id) shelfEditQuery = null
-                                            }) { Text("Für später zurückstellen") }
-                                            // A misread spine is not a book: drop it without adding anything.
-                                            TextButton(onClick = {
-                                                session.shelfReview.complete(group.id)
-                                                if (shelfEditQuery == group.id) shelfEditQuery = null
-                                            }) { Text("Verwerfen", color = colorScheme.error) }
-                                        }
+                                        TextButton(onClick = {
+                                            session.shelfReview.postpone(group.id)
+                                            if (shelfEditQuery == group.id) shelfEditQuery = null
+                                        }) { Text("Für später zurückstellen") }
                                     }
                                 }
                             }
