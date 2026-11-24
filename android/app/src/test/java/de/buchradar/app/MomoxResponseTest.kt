@@ -22,7 +22,8 @@ class MomoxResponseTest {
     @Test fun unknownStatusIsNamedInMessage() {
         val error = assertThrows(MomoxCheckException::class.java) { MomoxCatalog.validateOffer(isbn, offer().copy(status = "max_reached")) }
         assertTrue(error.message!!.contains("„max_reached“"))
-        assertTrue(error.pauseQueue)
+        assertTrue(error.unknownFormat)
+        assertFalse(error.pauseQueue)
     }
     @Test fun missingStatusIsReported() {
         val error = assertThrows(MomoxCheckException::class.java) { MomoxCatalog.validateOffer(isbn, MomoxOfferResponse(null, null, null, null)) }

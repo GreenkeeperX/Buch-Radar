@@ -105,18 +105,18 @@ object MomoxCatalog {
             }
             "no_offer" -> MomoxCheck("NOT_AVAILABLE", null, response.product?.title)
             "unknown" -> MomoxCheck("UNKNOWN", null, response.product?.title)
-            else -> throw MomoxCheckException(unknownFormatMessage(response.status), retryable = false, pauseQueue = true)
+            // One odd answer marks only this book; the coordinator pauses after several in a row.
+            else -> throw MomoxCheckException(unknownFormatMessage(response.status), retryable = false, unknownFormat = true)
         }
     }
 
     /**
-     * Momox answered with HTTP 200 but a status the app does not know (or none). The queue pauses
-     * instead of guessing "kein Angebot"; the received status is named so the cause is visible.
+     * Momox answered with HTTP 200 but a status the app does not know (or none). Nothing is guessed
+     * ("kein Angebot" would be wrong); the received status is named so the cause is visible.
      */
     internal fun unknownFormatMessage(status: String?): String {
         val shown = status?.filter { it.isLetterOrDigit() || it == '_' || it == '-' }?.take(40)?.takeIf(String::isNotBlank)
-        return if (shown == null) "Momox-Antwort ohne Status; Prüfung angehalten, damit kein falsches Ergebnis gespeichert wird."
-        else "Momox meldet den unbekannten Status „$shown“; Prüfung angehalten, damit kein falsches Ergebnis gespeichert wird."
+        return if (shown == null) "Momox-Antwort ohne Status" else "Unbekannter Momox-Status „$shown“"
     }
 
     private fun httpFailureMessage(code: Int): String = when (code) {
@@ -127,4 +127,6 @@ object MomoxCatalog {
     }
 }
 
-class MomoxCheckException(message: String, cause: Throwable? = null, val retryable: Boolean = true, val pauseQueue: Boolean = false, val retryAfterSeconds: Long? = null) : Exception(message, cause)
+/** [unknownFormat]: an answer the app cannot read; the book gets an error, repeated ones pause the queue. */
+class MomoxCheckException(message: String, cause: Throwable? = null, val retryable: Boolean = true, val pauseQueue: Boolean = false,
+    val retryAfterSeconds: Long? = null, val unknownFormat: Boolean = false) : Exception(message, cause)
