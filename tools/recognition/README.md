@@ -114,6 +114,20 @@ nachher 7–13 je Foto. Im öffentlichen Foto teilt der Kantenumbau einzelne Rü
 (2–5 statt 0 aufgeteilte Rücken). Private Fotos und ihre Sollwerte bleiben außerhalb des
 Repositorys.
 
+## Textspalten und Bruchstücke (nach 0.15)
+
+Kanten, die mitten durch eine senkrechte Textzeile laufen, gelten nicht mehr als Buchgrenze;
+breite Regionen werden an Lücken zwischen Textspalten geteilt; Autor oben und Titel unten in
+derselben Spalte bleiben ein Rücken; schräge Rücken werden bis zu einer Neigung von etwa 1:4
+gesucht. Gemessen wie oben (Pixel 9a, Regionen-Durchgang, sauber gelesene Rücken):
+
+| Satz | 1280 px | 1920 px | 2560 px |
+|---|---:|---:|---:|
+| Öffentliches Regalfoto, vorher | 3/20 | 7/20 | 13/20 |
+| Öffentliches Regalfoto, nachher | 3/20 | 7/20 | 13/20 |
+| 4 private Handyfotos (32 Rücken), vorher | 6/32 | 8/32 | 6/32 |
+| 4 private Handyfotos (32 Rücken), nachher | 12/32 | 13/32 | 12/32 |
+
 Rohmetriken ohne OCR-Texte: `baseline-0.13.json` und `results-0.14.json`.
 Die aktuellen Schnitte sind heuristisch; mehrere Regalreihen, schräg gestapelte
 Bücher und ein unabhängiger Testsatz sind weitere Aufgaben.
