@@ -115,3 +115,17 @@ internal fun cleanSpineText(text: String): String {
     }
     return result.joinToString("\n")
 }
+
+/** Spine words that name a publisher or place, never a book on their own. */
+private val publisherWords = setOf(
+    "hanser", "dtv", "suhrkamp", "fischer", "rororo", "rowohlt", "reclam", "diogenes", "piper", "goldmann",
+    "heyne", "insel", "ullstein", "kiepenheuer", "witsch", "btb", "aufbau", "brockhaus", "leipzig", "berlin",
+    "munchen", "verlag", "taschenbuch", "penguin", "vintage", "oreilly", "beck", "kosmos", "dumont"
+)
+
+/**
+ * A spine group is worth a catalog search only with at least one word of four or more letters
+ * that is not just a publisher or place ("Hanser", "dtv !" alone are not books).
+ */
+internal fun isUsefulSpineText(text: String): Boolean =
+    foldOcr(text).split(' ').any { word -> word.count(Char::isLetter) >= 4 && word !in publisherWords }

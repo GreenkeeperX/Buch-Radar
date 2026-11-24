@@ -193,7 +193,7 @@ fun BookScannerView(
                             acc
                         }
                         val groups = groupSpines(pieces, image.width, image.height)
-                        val found = groups.map(::spineText).filter { it.isNotBlank() }
+                        val found = groups.map(::spineText).filter(::isUsefulSpineText)
                         val looksShelf = groups.size >= 3 && groups.count { group -> group.any { abs(it.angle % 180) in 55f..125f } } >= 2
                         shelfVotes = (shelfVotes + if (looksShelf) 1 else -1).coerceIn(-4, 4)
                         val isShelf = actualMode == ScannerMode.SHELF || actualMode == ScannerMode.AUTOMATIC && shelfVotes >= 3
@@ -243,7 +243,7 @@ fun BookScannerView(
                                 ownedFrame = null
                                 transferredFrame = image
                                 if (isShelf) {
-                                    val selected = separated?.texts?.takeIf { it.isNotEmpty() } ?: found
+                                    val selected = separated?.texts?.filter(::isUsefulSpineText)?.takeIf { it.isNotEmpty() } ?: found
                                     val warning = when {
                                         separated == null -> "Buchgrenzen waren nicht eindeutig. Bitte die vorgeschlagenen Gruppen prüfen."
                                         separated.exhausted -> "Nicht alle Rücken konnten vollständig gelesen werden. Fehlende Bücher bitte näher scannen."

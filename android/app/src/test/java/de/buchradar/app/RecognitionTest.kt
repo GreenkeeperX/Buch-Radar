@@ -38,6 +38,14 @@ class RecognitionTest {
         assertTrue(frameDifference(base, brighter) < 1.0)
         assertTrue(frameDifference(base, shifted) > 12.0)
     }
+    @Test fun publisherAndFragmentGroupsAreNotBooks() {
+        assertFalse(isUsefulSpineText("Hanser"))
+        assertFalse(isUsefulSpineText("dty !"))
+        assertFalse(isUsefulSpineText("BROCKHAUS LEIPZIG"))
+        assertTrue(isUsefulSpineText("Tom Reiss"))
+        assertTrue(isUsefulSpineText("DER ORIENTALIST\nHanser"))
+        assertTrue(isUsefulSpineText("Hofstadter Gödel, Escher, Bach"))
+    }
     @Test fun adjacentSpinesStaySeparateAndIdenticalNamesAreNotDeduplicated() {
         val pieces = listOf(
             OcrPiece("Hugo", 10f, 10f, 30f, 50f, 90f),
