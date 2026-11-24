@@ -31,6 +31,11 @@ class IdentityTest {
         assertNull(BookIdentity.unambiguousIsbn("9783123171541"))
         // Ordinary words with a few digits are not treated as barcode lines.
         assertNull(BookIdentity.unambiguousIsbn("Bios 1978 Seite 12"))
+        // A valid ISBN inside a longer identifier is not cut out.
+        assertNull(BookIdentity.unambiguousIsbn("197801403287219"))
+        assertNull(BookIdentity.unambiguousIsbn("Bestellnr. 9ll7831251715412"))
+        // Digits printed in groups under the barcode still join up.
+        assertEquals("9780863815805", BookIdentity.unambiguousIsbn("9 780863 815805"))
     }
     @Test fun printedIsbnAndOtherBarcodeOnOneLineStayAmbiguous() {
         assertEquals(listOf("9780140328721", "9783125171541"), BookIdentity.isbnsInText("ISBN 9780140328721 9ll783125171541"))

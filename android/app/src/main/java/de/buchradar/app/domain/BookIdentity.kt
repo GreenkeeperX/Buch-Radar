@@ -30,14 +30,16 @@ object BookIdentity {
 
     /**
      * Recovers an EAN-13 from the human-readable line under a barcode, e.g. `9ll783125171541`
-     * (stripes read as `l`) or `g"780863"815805`. Only runs with at least nine real digits are
-     * considered, and only 978/979 numbers with a valid check digit are accepted.
+     * (stripes read as `l`) or `g"780863"815805`. A candidate is one or more whole, adjacent
+     * space-separated groups (`9 780863 815805`) that map to exactly 13 digits; a valid number
+     * inside a longer identifier (`197801403287219`) is never cut out. Only runs with at least
+     * nine real digits are considered, and only 978/979 numbers with a valid check digit count.
      */
     internal fun barcodeLineIsbns(line: String): List<String> = barcodeRun.findAll(line).flatMap { run ->
-        val value = run.value
-        if (value.count(Char::isDigit) < 9) return@flatMap emptySequence()
-        fun mapped(stripesAsOne: Boolean) = buildString {
-            for (c in value) when (c) {
+        if (run.value.count(Char::isDigit) < 9) return@flatMap emptySequence()
+        val groups = run.value.split(' ')
+        fun mapped(group: String, stripesAsOne: Boolean) = buildString {
+            for (c in group) when (c) {
                 in '0'..'9' -> append(c)
                 'O', 'o' -> append('0')
                 'g' -> append('9')
@@ -47,8 +49,14 @@ object BookIdentity {
                 else -> Unit
             }
         }
-        sequenceOf(mapped(false), mapped(true)).flatMap { digits ->
-            Regex("97[89][0-9]{10}").findAll(digits).mapNotNull { canonicalIsbn(it.value) }
+        sequenceOf(false, true).flatMap { stripesAsOne ->
+            val digits = groups.map { mapped(it, stripesAsOne) }
+            groups.indices.asSequence().flatMap { start ->
+                (start until groups.size).asSequence()
+                    .map { end -> digits.subList(start, end + 1).joinToString("") }
+                    .takeWhile { it.length <= 13 }
+                    .filter { it.length == 13 && (it.startsWith("978") || it.startsWith("979")) }
+            }.mapNotNull { canonicalIsbn(it) }
         }
     }.distinct().toList()
 
