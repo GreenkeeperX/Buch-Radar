@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package de.buchradar.app
 
 import androidx.compose.foundation.BorderStroke
@@ -7,6 +9,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -112,57 +115,49 @@ internal fun ListOverview(title: String, totals: BookListTotals, showValue: Bool
     }
 }
 
+/** "heute 14:05", "gestern 09:12" or "21.11.2026": short enough for one quiet line. */
+internal fun formatCheckedAt(millis: Long, now: Long = System.currentTimeMillis()): String {
+    fun midnight(t: Long) = java.util.Calendar.getInstance().apply {
+        timeInMillis = t; set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0)
+        set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+    }.timeInMillis
+    val time = SimpleDateFormat("HH:mm", Locale.GERMANY).format(Date(millis))
+    // Rounded day difference between local midnights, so daylight saving and year ends count right.
+    return when (Math.round((midnight(now) - midnight(millis)) / 86_400_000.0)) {
+        0L -> "heute $time"
+        1L -> "gestern $time"
+        else -> SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY).format(Date(millis))
+    }
+}
+
 /**
- * One compact line for Momox: the last result (tap for the value, × to hide) and the check
- * action. Without a result a full-width button says what the check does.
+ * One quiet line for Momox: when the list was last checked and the check action. Counts live in
+ * the overview and the filter; only errors of the last run get a link to the error filter.
+ * Without any check yet a full-width button says what the check does.
  */
 @Composable
-internal fun MomoxActionRow(summary: MomoxSummary?, expanded: Boolean, canCheck: Boolean,
-    onToggle: () -> Unit, onDismiss: () -> Unit, onCheck: () -> Unit) {
-    val status = LocalStatusColors.current
+internal fun MomoxActionRow(lastCheckedAt: Long?, errors: Int, canCheck: Boolean, onShowErrors: () -> Unit, onCheck: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
-    // With large fonts result and check button get their own lines, so the counts are never cut.
-    val stacked = summary != null && androidx.compose.ui.platform.LocalConfiguration.current.fontScale >= 1.3f
-    Column(Modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            if (summary != null) {
-                // Label and values on two short lines, so the row never wraps mid-phrase.
-                Column(Modifier.weight(1f).clickable(onClickLabel = if (expanded) "Weniger anzeigen" else "Ankaufwert anzeigen", onClick = onToggle)
-                    .padding(vertical = 4.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Letzte Prüfung", style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
-                        Icon(if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown, contentDescription = null,
-                            tint = scheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
-                    }
-                    Text(
-                        buildAnnotatedString {
-                            withStyle(SpanStyle(color = if (summary.available > 0) status.success else scheme.onSurfaceVariant, fontWeight = FontWeight.Bold)) {
-                                append("${summary.available} Ankauf")
-                            }
-                            append(" · ${summary.unavailable} ohne")
-                            if (summary.errors > 0) withStyle(SpanStyle(color = scheme.error, fontWeight = FontWeight.Bold)) { append(" · ${summary.errors} Fehler") }
-                        },
-                        style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant,
-                        maxLines = if (stacked) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis
-                    )
-                }
-                IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, contentDescription = "Ergebnis ausblenden", tint = scheme.onSurfaceVariant) }
-            }
-            // Without a result the button alone says what it does and takes the full width.
-            if (canCheck && !stacked) FilledTonalButton(onClick = onCheck, contentPadding = PaddingValues(horizontal = 14.dp),
-                modifier = if (summary == null) Modifier.fillMaxWidth().heightIn(min = 48.dp) else Modifier.heightIn(min = 48.dp)) {
-                Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text(if (summary == null) "Ankaufpreise bei Momox prüfen" else "Momox prüfen")
+    if (lastCheckedAt == null) {
+        if (canCheck) FilledTonalButton(onClick = onCheck, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+            Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Ankaufpreise bei Momox prüfen")
+        }
+        return
+    }
+    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalArrangement = Arrangement.Center) {
+        Row(Modifier.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Geprüft ${formatCheckedAt(lastCheckedAt)}", style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+            if (errors > 0) TextButton(onClick = onShowErrors, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text(if (errors == 1) "1 Fehler" else "$errors Fehler", color = scheme.error)
             }
         }
-        if (canCheck && stacked) FilledTonalButton(onClick = onCheck, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+        if (canCheck) TextButton(onClick = onCheck, modifier = Modifier.heightIn(min = 48.dp)) {
             Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))
             Text("Momox prüfen")
         }
-        if (summary != null && expanded) Text("Ankaufwert dieser Prüfung: ${formatEuro(summary.totalValueCents)}",
-            style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 4.dp))
     }
 }
 

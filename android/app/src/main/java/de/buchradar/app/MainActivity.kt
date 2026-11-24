@@ -73,7 +73,6 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -176,8 +175,6 @@ class MainActivity : ComponentActivity() {
                 val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
                 // From 130 % system font the list gets the same space-saving layout as landscape.
                 val largeFont = LocalConfiguration.current.fontScale >= 1.3f
-                // From 170 % the filter chips would fill the screen; one filter menu replaces them.
-                val hugeFont = LocalConfiguration.current.fontScale >= 1.7f
                 var filterMenuOpen by remember { mutableStateOf(false) }
                 val session: BookSessionViewModel = viewModel()
                 val scope = session.viewModelScope
@@ -841,34 +838,23 @@ class MainActivity : ComponentActivity() {
                                                 }
                                             }
                                         } else if (!selectionMode) MomoxActionRow(
-                                            summary = momoxSummary,
-                                            expanded = summaryExpanded,
+                                            lastCheckedAt = checkRun?.finishedAt?.takeIf { checkRun?.pausedReason == null } ?: books.mapNotNull { it.lastCheckedAt }.maxOrNull(),
+                                            errors = momoxSummary?.errors ?: 0,
                                             canCheck = books.isNotEmpty(),
-                                            onToggle = { summaryExpanded = !summaryExpanded },
-                                            onDismiss = { momoxSummary = null; dismissedSummaryRun = checkRun?.startedAt },
+                                            onShowErrors = { statusFilter = BookListQuery.FILTER_ERROR },
                                             onCheck = { momoxCheckDialogOpen = true }
                                         )
                                     }
-                                    if (!selectionMode && (if (showSoldBooks) soldBooks else books).isNotEmpty()) Row(
-                                        Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically
+                                    // Filter and sorting as two choice buttons on one line (wrapping only at large fonts);
+                                    // the chips took two rows and made the header restless.
+                                    if (!selectionMode && (if (showSoldBooks) soldBooks else books).isNotEmpty()) FlowRow(
+                                        Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalArrangement = Arrangement.spacedBy(4.dp)
                                     ) {
-                                        Box {
-                                            IconButton(onClick = { sortMenuOpen = true }) {
-                                                Icon(painterResource(R.drawable.ic_sort), contentDescription = "Sortierung: ${BookListQuery.sortLabel(sortMode)}",
-                                                    tint = if (sortMode != BookListQuery.SORT_RECENT) colorScheme.primary else colorScheme.onSurfaceVariant)
-                                            }
-                                            DropdownMenu(expanded = sortMenuOpen, onDismissRequest = { sortMenuOpen = false }) {
-                                                BookListQuery.sorts.forEach { (key, label) ->
-                                                    DropdownMenuItem(text = { Text(label) }, onClick = { sortMode = key; sortMenuOpen = false },
-                                                        trailingIcon = if (key == sortMode) { { Icon(Icons.Filled.Check, contentDescription = "Ausgewählt") } } else null)
-                                                }
-                                            }
-                                        }
-                                        if (showSoldBooks) Text(BookListQuery.sortLabel(sortMode), style = MaterialTheme.typography.labelLarge, color = colorScheme.onSurfaceVariant)
-                                        else if (hugeFont) Box(Modifier.weight(1f)) {
+                                        if (!showSoldBooks) Box {
                                             val current = BookListQuery.filters.firstOrNull { it.first == statusFilter } ?: BookListQuery.filters.first()
-                                            OutlinedButton(onClick = { filterMenuOpen = true }, modifier = Modifier.heightIn(min = 48.dp)) {
-                                                Text("Filter: ${current.second} ${books.count { BookListQuery.matchesStatus(it, current.first) }}")
+                                            OutlinedButton(onClick = { filterMenuOpen = true }, modifier = Modifier.heightIn(min = 48.dp),
+                                                contentPadding = PaddingValues(start = 14.dp, end = 8.dp)) {
+                                                Text("${current.second} ${books.count { BookListQuery.matchesStatus(it, current.first) }}", maxLines = 1)
                                                 Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
                                             }
                                             DropdownMenu(expanded = filterMenuOpen, onDismissRequest = { filterMenuOpen = false }) {
@@ -880,18 +866,17 @@ class MainActivity : ComponentActivity() {
                                                 }
                                             }
                                         }
-                                        // Chips wrap instead of scrolling sideways, so no filter hides past the edge.
-                                        else FlowRow(
-                                            Modifier.weight(1f),
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                        ) {
-                                            // Counts on the chips; empty filters are hidden unless selected.
-                                            BookListQuery.filters.forEach { (key, label) ->
-                                                val count = books.count { BookListQuery.matchesStatus(it, key) }
-                                                if (key == BookListQuery.FILTER_ALL || count > 0 || statusFilter == key) FilterChip(
-                                                    selected = statusFilter == key, onClick = { statusFilter = key },
-                                                    label = { Text("$label $count") },
-                                                    leadingIcon = if (statusFilter == key) { { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp)) } } else null)
+                                        Box {
+                                            TextButton(onClick = { sortMenuOpen = true }, modifier = Modifier.heightIn(min = 48.dp)) {
+                                                Icon(painterResource(R.drawable.ic_sort), contentDescription = null, modifier = Modifier.size(18.dp).padding(end = 2.dp))
+                                                Text(BookListQuery.sortLabel(sortMode), maxLines = 1)
+                                                Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
+                                            }
+                                            DropdownMenu(expanded = sortMenuOpen, onDismissRequest = { sortMenuOpen = false }) {
+                                                BookListQuery.sorts.forEach { (key, label) ->
+                                                    DropdownMenuItem(text = { Text(label) }, onClick = { sortMode = key; sortMenuOpen = false },
+                                                        trailingIcon = if (key == sortMode) { { Icon(Icons.Filled.Check, contentDescription = "Ausgewählt") } } else null)
+                                                }
                                             }
                                         }
                                     }
