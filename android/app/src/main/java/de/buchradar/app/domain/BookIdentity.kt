@@ -50,13 +50,22 @@ object BookIdentity {
             }
         }
         sequenceOf(false, true).flatMap { stripesAsOne ->
-            val digits = groups.map { mapped(it, stripesAsOne) }
-            groups.indices.asSequence().flatMap { start ->
-                (start until groups.size).asSequence()
-                    .map { end -> digits.subList(start, end + 1).joinToString("") }
-                    .takeWhile { it.length <= 13 }
-                    .filter { it.length == 13 && (it.startsWith("978") || it.startsWith("979")) }
-            }.mapNotNull { canonicalIsbn(it) }
+            // Groups without digits (pure stripe noise) are dropped first, so every window step adds
+            // at least one digit and a window never grows past 13: linear in the line length.
+            val digits = groups.map { mapped(it, stripesAsOne) }.filter(String::isNotEmpty)
+            val found = mutableListOf<String>()
+            for (start in digits.indices) {
+                val window = StringBuilder()
+                for (end in start until digits.size) {
+                    window.append(digits[end])
+                    if (window.length > 13) break
+                    if (window.length == 13 && (window.startsWith("978") || window.startsWith("979"))) {
+                        canonicalIsbn(window.toString())?.let(found::add)
+                        break
+                    }
+                }
+            }
+            found.asSequence()
         }
     }.distinct().toList()
 

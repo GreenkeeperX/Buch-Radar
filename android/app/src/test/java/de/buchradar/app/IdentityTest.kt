@@ -36,6 +36,10 @@ class IdentityTest {
         assertNull(BookIdentity.unambiguousIsbn("Bestellnr. 9ll7831251715412"))
         // Digits printed in groups under the barcode still join up.
         assertEquals("9780863815805", BookIdentity.unambiguousIsbn("9 780863 815805"))
+        // Long stripe noise stays fast and finds nothing.
+        val started = System.nanoTime()
+        assertNull(BookIdentity.unambiguousIsbn(List(1_500) { "|" }.joinToString(" ") + " 123456789"))
+        assertTrue(System.nanoTime() - started < 500_000_000)
     }
     @Test fun printedIsbnAndOtherBarcodeOnOneLineStayAmbiguous() {
         assertEquals(listOf("9780140328721", "9783125171541"), BookIdentity.isbnsInText("ISBN 9780140328721 9ll783125171541"))
