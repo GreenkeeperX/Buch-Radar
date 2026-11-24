@@ -494,7 +494,8 @@ class MainActivity : ComponentActivity() {
                     snackbarHost = { SnackbarHost(snackbar) },
                     floatingActionButton = {
                         // Collapses to the camera icon once the list scrolls and in landscape, so it covers less.
-                        if (onListScreen && !showSoldBooks && !selectionMode && searchInput.isBlank() && fabShown) ExtendedFloatingActionButton(
+                        // From 170 % font the scan action sits in the top bar instead, so nothing floats over the cards.
+                        if (onListScreen && !showSoldBooks && !selectionMode && searchInput.isBlank() && fabShown && !hugeFont) ExtendedFloatingActionButton(
                             expanded = !landscape && !largeFont && bookListState.firstVisibleItemIndex == 0,
                             onClick = { if (!isSearching) openScanner(ScannerMode.AUTOMATIC) },
                             icon = { Icon(painterResource(R.drawable.ic_camera), contentDescription = "Buch oder Regal scannen") },
@@ -540,6 +541,9 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
                                 } else if (onListScreen) {
+                                    if (hugeFont && !showSoldBooks) IconButton(onClick = { if (!isSearching) openScanner(ScannerMode.AUTOMATIC) }) {
+                                        Icon(painterResource(R.drawable.ic_camera), contentDescription = "Buch oder Regal scannen")
+                                    }
                                     IconButton(onClick = { settingsOpen = true }) { Icon(Icons.Filled.Settings, contentDescription = "Einstellungen öffnen") }
                                 }
                             }

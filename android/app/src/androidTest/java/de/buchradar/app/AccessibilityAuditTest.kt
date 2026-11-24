@@ -101,6 +101,13 @@ class AccessibilityAuditTest {
                     report.put(audit("details", scale))
                     pressBack()
                     waitFor { node { n -> n.contentDescription?.toString() == "Einstellungen öffnen" } }
+                    // The sale screen, reached from the overview's "Verkaufen" (seeded book 1 has an offer).
+                    scrollTo(forward = false) { n -> n.text?.toString() == "Verkaufen" }
+                    click { n -> n.text?.toString() == "Verkaufen" }
+                    waitFor { node { n -> n.contentDescription?.toString() == "Zurück zur Liste" } }
+                    report.put(audit("verkaufen", scale))
+                    pressBack()
+                    waitFor { node { n -> n.contentDescription?.toString() == "Einstellungen öffnen" } }
                     click { n -> n.contentDescription?.toString() == "Einstellungen öffnen" }
                     waitFor { node { n -> n.text?.toString() == "Einstellungen" } }
                     report.put(audit("einstellungen", scale))
@@ -154,6 +161,9 @@ class AccessibilityAuditTest {
             if (!node.isVisibleToUser) return@walk
             val bounds = Rect().also { node.getBoundsInScreen(it) }
             if (bounds.isEmpty) return@walk
+            // A row cut by the edge of its scrolling list is half scrolled out, not too small or faint;
+            // it is checked whole once scrolled into view.
+            if (cutByScrollEdge(node, bounds)) return@walk
             val actionable = node.isClickable || node.isLongClickable || node.isCheckable ||
                 node.actionList.any { it.id == AccessibilityNodeInfo.ACTION_CLICK }
             if (actionable) {
@@ -193,6 +203,19 @@ class AccessibilityAuditTest {
         }.getOrDefault(false)
     }
 
+    private fun cutByScrollEdge(node: AccessibilityNodeInfo, bounds: Rect): Boolean {
+        var current = node.parent
+        while (current != null) {
+            val ancestor: AccessibilityNodeInfo = current
+            if (ancestor.isScrollable) {
+                val list = Rect().also { ancestor.getBoundsInScreen(it) }
+                return kotlin.math.abs(bounds.bottom - list.bottom) <= 1 || kotlin.math.abs(bounds.top - list.top) <= 1
+            }
+            current = current.parent
+        }
+        return false
+    }
+
     private fun insideScrollable(node: AccessibilityNodeInfo): Boolean {
         var current = node.parent
         while (current != null) { if (current.isScrollable) return true; current = current.parent }
@@ -217,7 +240,7 @@ class AccessibilityAuditTest {
         return found
     }
 
-    private fun scrollTo(match: (AccessibilityNodeInfo) -> Boolean) {
+    private fun scrollTo(forward: Boolean = true, match: (AccessibilityNodeInfo) -> Boolean) {
         repeat(8) {
             if (node(match) != null) return
             var largest: AccessibilityNodeInfo? = null
@@ -230,7 +253,7 @@ class AccessibilityAuditTest {
                     }
                 }
             }
-            largest?.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD) ?: SystemClock.sleep(250)
+            largest?.performAction(if (forward) AccessibilityNodeInfo.ACTION_SCROLL_FORWARD else AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD) ?: SystemClock.sleep(250)
             SystemClock.sleep(600)
         }
         waitFor { node(match) }
