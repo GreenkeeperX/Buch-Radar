@@ -107,7 +107,7 @@ fun SaleScreen(
                     onMarkSold(chosen.associate { it.id to BookListQuery.offeredCents(it) }) { outcome -> busy = false; conflict = outcome == false }
                 }, enabled = chosen.isNotEmpty() && !busy, modifier = modifier.heightIn(min = 52.dp)) {
                     Icon(painterResource(R.drawable.ic_sold), contentDescription = null, modifier = Modifier.padding(end = 8.dp))
-                    Text("Als verkauft markieren")
+                    Text("Verkauft markieren")
                 }
             }
             if (configuration.fontScale >= 1.3f) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -168,7 +168,8 @@ fun SaleScreen(
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text(book.title ?: "Unbekannter Titel", style = MaterialTheme.typography.titleMedium)
                                 book.author?.takeIf(String::isNotBlank)?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant) }
-                                Text(BookInputFormat.screenIsbn(book.isbn), style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+                                Text(BookInputFormat.screenIsbn(book.isbn), style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant,
+                                    softWrap = false, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                                 when {
                                     queued && paused != null -> Text("Neuprüfung angehalten", style = MaterialTheme.typography.bodyMedium, color = scheme.error)
                                     queued -> Text("Wird gerade neu geprüft …", style = MaterialTheme.typography.bodyMedium, color = scheme.primary)

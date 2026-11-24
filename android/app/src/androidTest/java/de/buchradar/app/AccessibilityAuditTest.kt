@@ -1,11 +1,15 @@
 package de.buchradar.app
 
+import android.Manifest
 import android.app.UiAutomation
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Rect
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityNodeInfo
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
 import de.buchradar.app.data.BookEntity
@@ -36,6 +40,7 @@ import kotlin.math.pow
  * touch targets of at least 48×48 dp, a spoken label for every actionable element,
  * estimated text contrast from a screenshot (4.5:1, large text 3:1) and elements cut
  * off at the window edge. Results and screenshots stay in the test app's cache.
+ * Aim the camera at a blank surface so automatic recognition does not leave the scanner.
  */
 class AccessibilityAuditTest {
     private companion object { const val BACKUP_KEY = "buchradar_a11y_font_scale_backup" }
@@ -89,10 +94,25 @@ class AccessibilityAuditTest {
             for (scale in listOf("1.0", "1.3", "2.0")) {
                 shell("settings put system font_scale $scale")
                 SystemClock.sleep(1_500)
-                ActivityScenario.launch(MainActivity::class.java).use {
+                ActivityScenario.launch(MainActivity::class.java).use { scenario ->
                     showList()
-                    waitFor { node { n -> n.text?.toString() == "Meine Bücher" } }
                     report.put(audit("liste", scale))
+                    if (context.checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                        click { n -> n.text?.toString() == "Scannen" }
+                        waitFor { node { n -> n.contentDescription?.toString() == "Kamera schließen" } }
+                        val safeBounds = Rect()
+                        scenario.onActivity { activity ->
+                            val decor = activity.window.decorView
+                            val insets = requireNotNull(ViewCompat.getRootWindowInsets(decor))
+                                .getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+                            val origin = IntArray(2).also { decor.getLocationOnScreen(it) }
+                            safeBounds.set(origin[0] + insets.left, origin[1] + insets.top,
+                                origin[0] + decor.width - insets.right, origin[1] + decor.height - insets.bottom)
+                        }
+                        report.put(audit("kamera", scale, safeBounds))
+                        click { n -> n.contentDescription?.toString() == "Kamera schließen" }
+                        waitFor { node { n -> n.contentDescription?.toString() == "Einstellungen öffnen" } }
+                    }
                     // With large fonts the header may fill the screen; the first book must be reachable by scrolling.
                     scrollTo { n -> n.text?.toString() == seeded[0].title }
                     report.put(audit("liste-buch", scale))
@@ -144,7 +164,7 @@ class AccessibilityAuditTest {
 
     private fun pressBack() { ownRoot(); instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK) }
 
-    private fun audit(screen: String, scale: String): JSONObject {
+    private fun audit(screen: String, scale: String, safeBounds: Rect? = null): JSONObject {
         instrumentation.waitForIdleSync()
         SystemClock.sleep(800)
         ownRoot()
@@ -153,6 +173,7 @@ class AccessibilityAuditTest {
         val density = context.resources.displayMetrics.density
         val window = Rect().also { root.getBoundsInScreen(it) }
         val issues = JSONArray()
+        var controlsTop = Int.MAX_VALUE
         fun issue(kind: String, node: AccessibilityNodeInfo, bounds: Rect, detail: String) {
             issues.put(JSONObject().put("kind", kind).put("label", label(node).take(80)).put("detail", detail)
                 .put("bounds", "${bounds.left},${bounds.top},${bounds.right},${bounds.bottom}"))
@@ -167,6 +188,9 @@ class AccessibilityAuditTest {
             val actionable = node.isClickable || node.isLongClickable || node.isCheckable ||
                 node.actionList.any { it.id == AccessibilityNodeInfo.ACTION_CLICK }
             if (actionable) {
+                controlsTop = minOf(controlsTop, bounds.top)
+                if (safeBounds != null && !safeBounds.contains(bounds))
+                    issue("systemleisten", node, bounds, "Tippfläche außerhalb des sicheren Fensterbereichs")
                 val w = bounds.width() / density; val h = bounds.height() / density
                 if (w < 47.5f || h < 47.5f) issue("tippflaeche", node, bounds, "%.0f×%.0f dp".format(w, h))
                 if (label(node).isBlank() && !hasLabelledChild(node)) issue("ohne_beschriftung", node, bounds, node.className?.toString().orEmpty())
@@ -184,7 +208,16 @@ class AccessibilityAuditTest {
             }
         }
         shot?.let { image ->
-            File(out, "$screen-$scale.png").outputStream().use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            // The camera preview can show the room: black it out above the controls and keep only
+            // the control panel in the saved picture. Measurements above used the original image.
+            val saved = if (screen == "kamera" && controlsTop != Int.MAX_VALUE) {
+                image.copy(Bitmap.Config.ARGB_8888, true).also { copy ->
+                    android.graphics.Canvas(copy).drawRect(0f, 0f, copy.width.toFloat(),
+                        (controlsTop - 24).coerceAtLeast(0).toFloat(), android.graphics.Paint().apply { color = android.graphics.Color.BLACK })
+                }
+            } else image
+            File(out, "$screen-$scale.png").outputStream().use { saved.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            if (saved !== image) saved.recycle()
             image.recycle()
         }
         return JSONObject().put("screen", screen).put("fontScale", scale).put("issues", issues)

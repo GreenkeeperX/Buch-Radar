@@ -72,7 +72,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -96,7 +95,6 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -115,12 +113,14 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -179,24 +179,6 @@ class MainActivity : ComponentActivity() {
                 // From 170 % the filter chips would fill the screen; one filter menu replaces them.
                 val hugeFont = LocalConfiguration.current.fontScale >= 1.7f
                 var filterMenuOpen by remember { mutableStateOf(false) }
-                // The scan button steps aside while the list scrolls down, so it never covers a card's
-                // status for long; it returns on scrolling up, at the top and at the end of the list.
-                var fabShown by remember { mutableStateOf(true) }
-                LaunchedEffect(bookListState) {
-                    var last = 0 to 0
-                    snapshotFlow { Triple(bookListState.firstVisibleItemIndex, bookListState.firstVisibleItemScrollOffset, bookListState.canScrollForward) }
-                        .collect { (index, offset, more) ->
-                            val down = index > last.first || (index == last.first && offset > last.second + 24)
-                            val up = index < last.first || (index == last.first && offset < last.second - 24)
-                            if (down || up) last = index to offset
-                            fabShown = when {
-                                index == 0 && offset == 0 || !more -> true
-                                down -> false
-                                up -> true
-                                else -> fabShown
-                            }
-                        }
-                }
                 val session: BookSessionViewModel = viewModel()
                 val scope = session.viewModelScope
                 val uiScope = rememberCoroutineScope()
@@ -244,11 +226,6 @@ class MainActivity : ComponentActivity() {
                 var sortMenuOpen by session.sortMenuOpen
                 var momoxCheckDialogOpen by session.momoxCheckDialogOpen
                 var momoxCheckMode by session.momoxCheckMode
-                SideEffect {
-                    val controller = WindowInsetsControllerCompat(window, view)
-                    if (scannerOpen) controller.hide(WindowInsetsCompat.Type.systemBars())
-                    else controller.show(WindowInsetsCompat.Type.systemBars())
-                }
                 val cameraPermissionRequest = rememberLauncherForActivityResult(
                     ActivityResultContracts.RequestPermission()
                 ) { granted ->
@@ -497,16 +474,6 @@ class MainActivity : ComponentActivity() {
 
                 Scaffold(
                     snackbarHost = { SnackbarHost(snackbar) },
-                    floatingActionButton = {
-                        // Collapses to the camera icon once the list scrolls and in landscape, so it covers less.
-                        // From 170 % font the scan action sits in the top bar instead, so nothing floats over the cards.
-                        if (onListScreen && !showSoldBooks && !selectionMode && searchInput.isBlank() && fabShown && !hugeFont) ExtendedFloatingActionButton(
-                            expanded = !landscape && !largeFont && bookListState.firstVisibleItemIndex == 0,
-                            onClick = { if (!isSearching) openScanner(ScannerMode.AUTOMATIC) },
-                            icon = { Icon(painterResource(R.drawable.ic_camera), contentDescription = "Buch oder Regal scannen") },
-                            text = { Text("Buch oder Regal scannen", style = MaterialTheme.typography.titleMedium) }
-                        )
-                    },
                     topBar = {
                         if (!scannerOpen) TopAppBar(
                             colors = TopAppBarDefaults.topAppBarColors(containerColor = if (selectionMode) colorScheme.secondaryContainer else colorScheme.surface),
@@ -546,9 +513,6 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
                                 } else if (onListScreen) {
-                                    if (hugeFont && !showSoldBooks) IconButton(onClick = { if (!isSearching) openScanner(ScannerMode.AUTOMATIC) }) {
-                                        Icon(painterResource(R.drawable.ic_camera), contentDescription = "Buch oder Regal scannen")
-                                    }
                                     IconButton(onClick = { settingsOpen = true }) { Icon(Icons.Filled.Settings, contentDescription = "Einstellungen öffnen") }
                                 }
                             }
@@ -571,13 +535,21 @@ class MainActivity : ComponentActivity() {
                                 selected = !showSoldBooks,
                                 onClick = { showSoldBooks = false; exitSelection() },
                                 icon = { Icon(painterResource(R.drawable.ic_books), contentDescription = null) },
-                                label = { Text("Bücher (${books.size})", style = MaterialTheme.typography.labelLarge) }
+                                label = { Text("Bücher", maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                            )
+                            NavigationBarItem(
+                                selected = false,
+                                enabled = !isSearching,
+                                onClick = { openScanner(ScannerMode.AUTOMATIC) },
+                                modifier = Modifier.semantics { role = Role.Button },
+                                icon = { Icon(painterResource(R.drawable.ic_camera), contentDescription = null) },
+                                label = { Text("Scannen", maxLines = 1, overflow = TextOverflow.Ellipsis) }
                             )
                             NavigationBarItem(
                                 selected = showSoldBooks,
                                 onClick = { showSoldBooks = true; exitSelection() },
                                 icon = { Icon(painterResource(R.drawable.ic_sold), contentDescription = null) },
-                                label = { Text("Verkauft (${soldBooks.size})", style = MaterialTheme.typography.labelLarge) }
+                                label = { Text("Verkauft", maxLines = 1, overflow = TextOverflow.Ellipsis) }
                             )
                         }
                     }
@@ -814,7 +786,6 @@ class MainActivity : ComponentActivity() {
                                 )
                             if (!showSoldBooks && !selectionMode) {
                                 val inputIsIsbn = BookInputFormat.parseIsbn(searchInput) != null
-                                // With an empty field, scanning is the floating action button in thumb reach.
                                 if (searchInput.isNotBlank()) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     run {
                                         Button(onClick = { submitInput(searchInput, coverFrame) }, enabled = !isSearching, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
@@ -849,7 +820,7 @@ class MainActivity : ComponentActivity() {
                         LazyColumn(
                             state = bookListState,
                             modifier = Modifier.weight(1f),
-                            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             // Overview, Momox action and chips scroll away so long lists keep their space.
@@ -936,7 +907,7 @@ class MainActivity : ComponentActivity() {
                                     },
                                     text = when {
                                         showSoldBooks && noBooksYet -> "Halte ein Buch in „Meine Bücher“ gedrückt, um es als verkauft zu markieren."
-                                        noBooksYet -> "Scanne den Barcode auf der Rückseite, ein Titelblatt oder ein ganzes Regal. Du kannst ISBN oder Titel auch oben eintippen. Danach fragt „Momox prüfen“ die Ankaufpreise ab."
+                                        noBooksYet -> "Tippe unten auf „Scannen“ oder gib oben eine ISBN oder einen Titel ein."
                                         else -> "Kein Buch entspricht der Suche oder dem Filter."
                                     },
                                     action = when {

@@ -17,6 +17,11 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -70,7 +75,6 @@ fun BookScannerView(
     val preview = remember { PreviewView(context).apply { scaleType = PreviewView.ScaleType.FIT_CENTER; implementationMode = PreviewView.ImplementationMode.COMPATIBLE } }
     var mode by remember { mutableStateOf(initialMode) }
     val currentMode by rememberUpdatedState(mode)
-    var menu by remember { mutableStateOf(false) }
     var observed by remember { mutableStateOf("") }
     var spines by remember { mutableStateOf<List<String>>(emptyList()) }
     var frame by remember { mutableStateOf<Bitmap?>(null) }
@@ -82,28 +86,32 @@ fun BookScannerView(
     val manualKey = remember { java.util.concurrent.atomic.AtomicReference("") }
     var finalizing by remember { mutableStateOf(false) }
     val confirm: () -> Unit = { manualKey.set(foldOcr(observed)); manualRequested.set(true) }
-    Box(modifier.fillMaxSize().background(Color.Black)) {
+    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    // The scanner shares the Activity window with the list. Inset its preview and controls together.
+    Box(modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).safeDrawingPadding().background(Color.Black)) {
         AndroidView(factory = { preview }, modifier = Modifier.fillMaxSize())
-        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(12.dp), verticalArrangement = Arrangement.SpaceBetween) {
-            // Compact controls: in landscape full-width bars covered much of the camera image.
-            val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
-            val chip = Modifier.background(Color.Black.copy(alpha = .7f), RoundedCornerShape(20.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                TextButton(onClick = onClose, modifier = chip) { Text("Schließen", color = Color.White) }
-                Box(chip) {
-                    TextButton(onClick = { menu = true }, enabled = !finalizing) { Text("${when(mode) { ScannerMode.AUTOMATIC -> "Auto"; ScannerMode.SINGLE_BOOK -> "Einzelbuch"; ScannerMode.SHELF -> "Regal"; ScannerMode.COVER_TEST -> "Cover-Test" }} ▾", color = Color.White) }
-                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                        ScannerMode.entries.forEach { choice -> DropdownMenuItem(text = { Text(when(choice) { ScannerMode.AUTOMATIC -> "Automatisch"; ScannerMode.SINGLE_BOOK -> "Einzelbuch"; ScannerMode.SHELF -> "Regal"; ScannerMode.COVER_TEST -> "Cover-Test (experimentell)" }) }, onClick = { mode = choice; menu = false }) }
-                    }
-                }
-            }
-            Column(Modifier.align(Alignment.CenterHorizontally).widthIn(max = 560.dp).fillMaxWidth()
-                .background(Color.Black.copy(alpha = .75f), RoundedCornerShape(16.dp)).padding(horizontal = 12.dp, vertical = if (landscape) 8.dp else 12.dp),
-                verticalArrangement = Arrangement.spacedBy(if (landscape) 4.dp else 8.dp)) {
-                Text(hint, color = Color.White, style = MaterialTheme.typography.titleMedium)
-                if (observed.isNotBlank()) Text(observed, color = Color.White, maxLines = if (landscape) 1 else 3,
+        Surface(
+            modifier = Modifier.align(Alignment.BottomCenter).widthIn(max = 560.dp).fillMaxWidth().padding(8.dp),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surfaceContainer
+        ) {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(if (landscape) 4.dp else 8.dp)
+            ) {
+                ScannerModeBar(mode = mode, onModeChange = { mode = it }, enabled = !finalizing, onClose = onClose)
+                Text(hint, style = MaterialTheme.typography.titleMedium)
+                if (observed.isNotBlank()) Text(observed, maxLines = if (landscape) 1 else 3,
                     overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
-                Button(onClick = confirm, enabled = !finalizing && observed.isNotBlank() && frame != null, modifier = Modifier.fillMaxWidth()) {
+                Button(
+                    onClick = confirm,
+                    enabled = !finalizing && observed.isNotBlank() && frame != null,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                ) {
                     Text(if (finalizing) "Buchrücken werden gelesen …" else if (shelf) "Buchrücken jetzt lesen" else "Jetzt suchen")
                 }
             }
@@ -307,6 +315,44 @@ fun BookScannerView(
             }
             barcodeScanner.close(); recognizer.close(); executor.shutdown()
             if (latestOwned !== transferredFrame) latestOwned?.recycle()
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
+@Composable
+private fun ScannerModeBar(mode: ScannerMode, onModeChange: (ScannerMode) -> Unit, enabled: Boolean, onClose: () -> Unit) {
+    var menuOpen by remember { mutableStateOf(false) }
+    val modes = listOf(ScannerMode.AUTOMATIC to "Auto", ScannerMode.SINGLE_BOOK to "Buch", ScannerMode.SHELF to "Regal")
+    // The two action icons wrap together when the system font needs more room for the segments.
+    FlowRow(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        SingleChoiceSegmentedButtonRow {
+            modes.forEachIndexed { index, (choice, label) ->
+                SegmentedButton(
+                    selected = mode == choice,
+                    onClick = { onModeChange(choice) },
+                    enabled = enabled,
+                    shape = SegmentedButtonDefaults.itemShape(index, modes.size),
+                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                ) { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onClose, modifier = Modifier.size(48.dp)) {
+                Icon(Icons.Filled.Close, contentDescription = "Kamera schließen")
+            }
+            Box {
+                TextButton(onClick = { menuOpen = true }, enabled = enabled, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
+                    if (mode == ScannerMode.COVER_TEST) Text("Cover-Test")
+                    Icon(Icons.Filled.MoreVert, contentDescription = "Weitere Kameramodi")
+                }
+                DropdownMenu(expanded = menuOpen && enabled, onDismissRequest = { menuOpen = false }) {
+                    DropdownMenuItem(text = { Text("Cover-Test (experimentell)") }, onClick = {
+                        menuOpen = false
+                        onModeChange(ScannerMode.COVER_TEST)
+                    }, modifier = Modifier.heightIn(min = 48.dp))
+                }
+            }
         }
     }
 }
