@@ -20,7 +20,12 @@ Die echte App `de.buchradar.app` enthält die private Bücherliste. Jeder Schrit
 2. Vor jedem Update eine private Sicherung anlegen (nur Debug-Build, `run-as`):
    `adb exec-out run-as de.buchradar.app tar -cf - databases shared_prefs > <private-folder>/buchradar-<commit>.tar`
 3. Lokal prüfen: `cd android && MOMOX_API_TOKEN= ./gradlew testDebugUnitTest lintDebug`
-4. Als Update installieren: `./gradlew installDebug`. Nie vorher deinstallieren. Bei Signaturkonflikt abbrechen und berichten.
+4. Als Update installieren: `./gradlew installDebug`, ohne `MOMOX_API_TOKEN=` oder `GOOGLE_BOOKS_API_KEY=` davor
+   (leere Variablen überschreiben `local.properties`; das ist nur für öffentliche APKs richtig). Vorher prüfen, ohne
+   Werte auszugeben, dass die private Version Zugänge enthält:
+   `grep -c 'MOMOX_API_TOKEN = "[^"]' app/build/generated/source/buildConfig/debug/de/buchradar/app/BuildConfig.java`
+   muss `1` liefern (analog `GOOGLE_BOOKS_API_KEY`); sonst sagt die App „Momox-Zugang ... nicht eingerichtet“.
+   Nie vorher deinstallieren. Bei Signaturkonflikt abbrechen und berichten.
 5. Gerätetests nur als eigene App: `./gradlew connectedDeviceTestAndroidTest` (App-ID `de.buchradar.app.devicetest`).
 6. Erkennungs-Benchmark (siehe `tools/recognition/README.md`): Bilder und Manifest kommen in den Cache der deviceTest-App.
    `adb shell run-as de.buchradar.app.devicetest ...`, dann
