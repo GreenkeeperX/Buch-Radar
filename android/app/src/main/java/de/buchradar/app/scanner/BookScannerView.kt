@@ -73,7 +73,7 @@ fun BookScannerView(
     val barcodeCallback by rememberUpdatedState(onBarcode)
     val textCallback by rememberUpdatedState(onTextConfirmed)
     val shelfCallback by rememberUpdatedState(onShelfConfirmed)
-    val preview = remember { PreviewView(context).apply { scaleType = PreviewView.ScaleType.FIT_CENTER; implementationMode = PreviewView.ImplementationMode.COMPATIBLE } }
+    val preview = remember { PreviewView(context).apply { scaleType = PreviewView.ScaleType.FIT_START; implementationMode = PreviewView.ImplementationMode.COMPATIBLE } }
     var mode by remember { mutableStateOf(initialMode) }
     val currentMode by rememberUpdatedState(mode)
     var observed by remember { mutableStateOf("") }
@@ -90,8 +90,9 @@ fun BookScannerView(
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     // The scanner shares the Activity window with the list. Inset its preview and controls together.
     Box(modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).safeDrawingPadding().background(Color.Black)) {
-        // The preview uses only the space above the control panel. When recognised text makes the
-        // panel taller, the camera image moves up and shrinks instead of being covered.
+        // The preview uses only the space above the control panel and is anchored at the top
+        // (FIT_START), so a growing panel first uses the free space below the image; the image
+        // shrinks only when that is used up, and is never covered.
         val density = androidx.compose.ui.platform.LocalDensity.current
         var panelHeight by remember { mutableStateOf(0.dp) }
         AndroidView(factory = { preview }, modifier = Modifier.fillMaxSize().padding(bottom = panelHeight))
