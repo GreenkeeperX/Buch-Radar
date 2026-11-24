@@ -104,25 +104,34 @@ fun BookScannerView(
             shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.surfaceContainer
         ) {
+            Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(if (landscape) 4.dp else 8.dp)) {
+            // Only hint and recognised text scroll when the panel reaches its height limit; the search
+            // button and the control row below stay visible at the bottom edge.
             Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 4.dp),
+                modifier = Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(if (landscape) 4.dp else 8.dp)
             ) {
-                ScannerModeBar(mode = mode, onModeChange = { mode = it }, enabled = !finalizing, onClose = onClose)
-                Text(hint, style = MaterialTheme.typography.titleMedium)
-                if (observed.isNotBlank()) Text(observed, maxLines = if (landscape) 1 else 3,
+                // Fixed line counts keep the panel the same height whatever is recognised, so the mode
+                // switch and the camera image above never jump.
+                val textLines = if (landscape) 1 else 3
+                Text(hint, style = MaterialTheme.typography.titleMedium, minLines = if (landscape) 1 else 2,
+                    maxLines = if (landscape) 1 else 2, overflow = TextOverflow.Ellipsis)
+                Text(observed, minLines = textLines, maxLines = textLines,
                     overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
-                Button(
-                    onClick = confirm,
-                    enabled = !finalizing && observed.isNotBlank() && frame != null,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                        disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                ) {
-                    Text(if (finalizing) "Buchrücken werden gelesen …" else if (shelf) "Buchrücken jetzt lesen" else "Jetzt suchen")
-                }
+            }
+            Button(
+                onClick = confirm,
+                enabled = !finalizing && observed.isNotBlank() && frame != null,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                colors = ButtonDefaults.buttonColors(
+                    disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            ) {
+                Text(if (finalizing) "Buchrücken werden gelesen …" else if (shelf) "Buchrücken jetzt lesen" else "Jetzt suchen")
+            }
+            // Mode switch and close sit at the bottom edge of the panel, in thumb reach, and never move.
+            ScannerModeBar(mode = mode, onModeChange = { mode = it }, enabled = !finalizing, onClose = onClose)
             }
         }
     }
