@@ -25,7 +25,12 @@ import kotlin.math.pow
 /**
  * Opt-in accessibility measurement of the real screens at several system font sizes
  * (`-e a11yAudit true`). Runs only in the separate deviceTest app with three synthetic
- * books, which are removed afterwards. The system font size is restored in any case.
+ * books, which are removed afterwards (also leftovers of an aborted run).
+ *
+ * The font size is a system setting. Its value before the run is kept in a settings key of its
+ * own, outside the test app, so a crashed or uninstalled test app cannot lose it; the next run
+ * or the host script restores it, checks the result and only then drops the backup. Run it with
+ * the host-side save and restore from the device test skill as a second guard.
  *
  * Checks per visible node, as Android's accessibility guidance describes them:
  * touch targets of at least 48×48 dp, a spoken label for every actionable element,
@@ -33,6 +38,8 @@ import kotlin.math.pow
  * off at the window edge. Results and screenshots stay in the test app's cache.
  */
 class AccessibilityAuditTest {
+    private companion object { const val BACKUP_KEY = "buchradar_a11y_font_scale_backup" }
+
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val automation: UiAutomation get() = instrumentation.uiAutomation
     private val context get() = instrumentation.targetContext
@@ -47,25 +54,38 @@ class AccessibilityAuditTest {
             lastAttemptStatus = "ERROR", lastAttemptAt = System.currentTimeMillis(), id = "a11y-test-3")
     )
 
-    /** The font size before the run, kept on disk so an aborted run is repaired by the next one or by @After. */
-    private val savedScale = File(out, "font-scale-before.txt")
+    private val optedIn get() = InstrumentationRegistry.getArguments().getString("a11yAudit") == "true"
 
-    @Before fun repairAbortedRun() { restoreFontScale() }
+    @Before fun repairAbortedRun() { if (optedIn) restoreFontScale() }
 
-    @After fun restoreFontScale() {
-        if (!savedScale.exists()) return
-        shell("settings put system font_scale ${savedScale.readText().trim()}")
-        savedScale.delete()
+    @After fun afterRun() { if (optedIn) restoreFontScale() }
+
+    /** Restores the saved font size ("null" = the setting did not exist) and keeps the backup unless the restore is confirmed. */
+    private fun restoreFontScale() {
+        val saved = shell("settings get global $BACKUP_KEY").trim()
+        if (saved.isEmpty() || saved == "null") return
+        val original = saved.removePrefix("v:")
+        if (original == "unset") shell("settings delete system font_scale") else shell("settings put system font_scale $original")
+        val now = shell("settings get system font_scale").trim()
+        check(if (original == "unset") now == "null" || now == "1.0" else now == original) { "Schriftgröße nicht wiederhergestellt" }
+        shell("settings delete global $BACKUP_KEY")
     }
 
     @Test fun auditScreensAtSeveralFontSizes() {
-        assumeTrue(InstrumentationRegistry.getArguments().getString("a11yAudit") == "true")
-        val originalScale = shell("settings get system font_scale").trim().takeIf { it.matches(Regex("[0-9.]+")) } ?: "1.0"
-        savedScale.writeText(originalScale)
+        assumeTrue(optedIn)
+        val current = shell("settings get system font_scale").trim()
+        val original = when {
+            current.matches(Regex("[0-9]+(\\.[0-9]+)?")) -> current
+            current == "null" || current.isEmpty() -> "unset"
+            else -> error("Unerwartete Schriftgröße, Lauf abgebrochen")
+        }
+        shell("settings put global $BACKUP_KEY v:$original")
+        check(shell("settings get global $BACKUP_KEY").trim() == "v:$original") { "Sicherung der Schriftgröße fehlgeschlagen" }
         val dao = BuchRadarDatabase.get(context).bookDao()
-        val inserted = runBlocking { seeded.filter { dao.insert(it) != -1L }.map { it.id } }
         val report = JSONArray()
         try {
+            // Leftovers of an aborted run go first, so the seeded books are fresh.
+            runBlocking { seeded.forEach { dao.deleteBook(it.id) }; seeded.forEach { dao.insert(it) } }
             for (scale in listOf("1.0", "1.3", "2.0")) {
                 shell("settings put system font_scale $scale")
                 SystemClock.sleep(1_500)
@@ -79,7 +99,7 @@ class AccessibilityAuditTest {
                     click { n -> n.text?.toString() == seeded[0].title }
                     waitFor { node { n -> n.contentDescription?.toString() == "Weitere Aktionen" } }
                     report.put(audit("details", scale))
-                    instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+                    pressBack()
                     waitFor { node { n -> n.contentDescription?.toString() == "Einstellungen öffnen" } }
                     click { n -> n.contentDescription?.toString() == "Einstellungen öffnen" }
                     waitFor { node { n -> n.text?.toString() == "Einstellungen" } }
@@ -88,7 +108,7 @@ class AccessibilityAuditTest {
             }
         } finally {
             restoreFontScale()
-            runBlocking { inserted.forEach { dao.deleteBook(it) } }
+            runBlocking { seeded.forEach { dao.deleteBook(it.id) } }
             File(out, "report.json").writeText(report.toString(2))
         }
     }
@@ -102,17 +122,27 @@ class AccessibilityAuditTest {
         repeat(5) {
             waitFor { node { n -> n.contentDescription?.toString() == "Einstellungen öffnen" || n.contentDescription?.toString() in inner } }
             if (node { n -> n.contentDescription?.toString() == "Einstellungen öffnen" } != null) return
-            instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
+            pressBack()
             SystemClock.sleep(800)
         }
         waitFor { node { n -> n.contentDescription?.toString() == "Einstellungen öffnen" } }
     }
 
+    /** Window root of the app under test; any other app in front ends the run instead of being driven or photographed. */
+    private fun ownRoot(): AccessibilityNodeInfo {
+        val root = requireNotNull(automation.rootInActiveWindow) { "Kein aktives Fenster" }
+        check(root.packageName?.toString() == context.packageName) { "Fremdes Fenster im Vordergrund, Lauf abgebrochen" }
+        return root
+    }
+
+    private fun pressBack() { ownRoot(); instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK) }
+
     private fun audit(screen: String, scale: String): JSONObject {
         instrumentation.waitForIdleSync()
         SystemClock.sleep(800)
+        ownRoot()
         val shot = automation.takeScreenshot()
-        val root = requireNotNull(automation.rootInActiveWindow) { "Kein aktives Fenster" }
+        val root = ownRoot()
         val density = context.resources.displayMetrics.density
         val window = Rect().also { root.getBoundsInScreen(it) }
         val issues = JSONArray()
@@ -133,10 +163,13 @@ class AccessibilityAuditTest {
             }
             if (bounds.right > window.right + 1 || bounds.left < window.left - 1)
                 issue("abgeschnitten", node, bounds, "über den Fensterrand")
+            // Text that runs past the bottom (or top) of the window and is not inside a scrolling list.
+            if ((bounds.bottom > window.bottom + 1 || bounds.top < window.top - 1) && !insideScrollable(node))
+                issue("abgeschnitten", node, bounds, "über den oberen oder unteren Fensterrand")
             val text = node.text?.toString().orEmpty()
             if (text.isNotBlank() && shot != null) {
                 val ratio = contrast(shot, bounds)
-                val large = bounds.height() / density >= 32f
+                val large = isLargeText(node, density)
                 if (ratio != null && ratio < (if (large) 3.0 else 4.5)) issue("kontrast", node, bounds, "≈%.1f:1".format(ratio))
             }
         }
@@ -145,6 +178,25 @@ class AccessibilityAuditTest {
             image.recycle()
         }
         return JSONObject().put("screen", screen).put("fontScale", scale).put("issues", issues)
+    }
+
+    /**
+     * Large text (3:1 suffices) from the rendered text size where Android reports it: at least
+     * 18 pt, i.e. 24 dp after font scaling. Without that information the stricter 4.5:1 applies.
+     */
+    private fun isLargeText(node: AccessibilityNodeInfo, density: Float): Boolean {
+        if (android.os.Build.VERSION.SDK_INT < 30) return false
+        return runCatching {
+            node.refreshWithExtraData(AccessibilityNodeInfo.EXTRA_DATA_RENDERING_INFO_KEY, android.os.Bundle())
+            val px = node.extraRenderingInfo?.textSizeInPx ?: return false
+            px / density >= 24f
+        }.getOrDefault(false)
+    }
+
+    private fun insideScrollable(node: AccessibilityNodeInfo): Boolean {
+        var current = node.parent
+        while (current != null) { if (current.isScrollable) return true; current = current.parent }
+        return false
     }
 
     private fun label(node: AccessibilityNodeInfo) =
@@ -186,6 +238,7 @@ class AccessibilityAuditTest {
 
     private fun click(match: (AccessibilityNodeInfo) -> Boolean) {
         var target = node(match) ?: error("Element nicht gefunden")
+        check(target.packageName?.toString() == context.packageName) { "Element gehört zu einer fremden App" }
         while (!target.isClickable) target = target.parent ?: break
         target.performAction(AccessibilityNodeInfo.ACTION_CLICK)
     }

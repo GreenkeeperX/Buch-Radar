@@ -1,6 +1,7 @@
 package de.buchradar.app
 
 import de.buchradar.app.data.BookEntity
+import de.buchradar.app.domain.BookListQuery
 import de.buchradar.app.domain.SaleList
 import org.junit.Assert.*
 import org.junit.Test
@@ -31,5 +32,16 @@ class SaleListTest {
         assertTrue(text.lines().any { it.startsWith("• Titel a – Autor – ISBN 978") && it.contains("4,50") })
         assertTrue(text.contains("Maßgeblich ist das Angebot beim Verkauf."))
         assertFalse(text.contains("älter als ein Tag"))
+    }
+
+    @Test fun overviewAndSaleListAgreeOnZeroPrices() {
+        val books = listOf(book("a", 0), book("b", 250))
+        assertEquals(SaleList.candidates(books).size, BookListQuery.totals(books).availableCount)
+    }
+
+    @Test fun freshOfferWithLaterFailureIsNotCalledOld() {
+        val text = SaleList.shareText(listOf(book("a", 450, attempt = "ERROR")), now)
+        assertFalse(text.contains("älter als ein Tag"))
+        assertTrue(text.contains("letzte Prüfung fehlgeschlagen"))
     }
 }

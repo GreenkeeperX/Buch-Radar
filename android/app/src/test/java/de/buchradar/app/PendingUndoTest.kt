@@ -14,9 +14,9 @@ class PendingUndoTest {
     }
 
     @Test fun deletionAndSaleAreUndoneTogether() {
-        val both = PendingUndo("Als verkauft markiert", soldIds = listOf("a")) + removed("9780804429573") +
-            PendingUndo("Als verkauft markiert", soldIds = listOf("a"))
-        assertEquals(listOf("a"), both.soldIds)
+        val both = PendingUndo("Als verkauft markiert", sold = mapOf("a" to 1L)) + removed("9780804429573") +
+            PendingUndo("Als verkauft markiert", sold = mapOf("a" to 2L))
+        assertEquals(mapOf("a" to 2L), both.sold)
         assertEquals(1, both.deleted.size)
         assertEquals("1 Buch entfernt, 1 als verkauft markiert", both.text)
     }

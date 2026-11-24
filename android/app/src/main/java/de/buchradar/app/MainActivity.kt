@@ -286,7 +286,7 @@ class MainActivity : ComponentActivity() {
                             val skipped = undo.deleted.count { book -> dao.insert(book) == -1L }
                             if (skipped > 0) message = if (skipped == 1) "Nicht wiederhergestellt: Diese ISBN ist inzwischen wieder in der Liste."
                                 else "$skipped Bücher nicht wiederhergestellt: Ihre ISBN ist inzwischen wieder in der Liste."
-                            if (undo.soldIds.isNotEmpty()) dao.updateSoldStatus(undo.soldIds, null)
+                            undo.sold.entries.groupBy({ it.value }, { it.key }).forEach { (soldAt, ids) -> dao.undoSold(ids, soldAt) }
                         }
                         if (outcome.isFailure) message = "Rückgängig machen fehlgeschlagen."
                     }
@@ -382,16 +382,32 @@ class MainActivity : ComponentActivity() {
                             else "Zurückholen fehlgeschlagen. Bitte erneut versuchen."
                     }
                 }
-                val markSold: (List<String>) -> Unit = { ids ->
+                // Marks only books that are still active (and, from the sale screen, still at the shown offer);
+                // the undo and the message name exactly the rows that changed. onDone(true) after the write.
+                val markSoldChecked: (List<String>, Map<String, Int?>?, (Boolean) -> Unit) -> Unit = { ids, expected, onDone ->
                     scope.launch {
-                        val marked = catchingOperation { dao.updateSoldStatus(ids, System.currentTimeMillis()) }
-                        if (marked.isFailure) message = "Markieren fehlgeschlagen. Bitte erneut versuchen."
+                        val soldAt = System.currentTimeMillis()
+                        val marked = catchingOperation { dao.markSold(ids, soldAt, expected) }
+                        val changed = marked.getOrNull()
+                        if (changed == null) message = "Markieren fehlgeschlagen. Bitte erneut versuchen."
                         else {
-                            val undo = PendingUndo(if (ids.size == 1) "Als verkauft markiert" else "${ids.size} Bücher als verkauft markiert", soldIds = ids)
-                            session.pendingUndo.value = session.pendingUndo.value?.plus(undo) ?: undo
+                            if (changed.isNotEmpty()) {
+                                val undo = PendingUndo(if (changed.size == 1) "Als verkauft markiert" else "${changed.size} Bücher als verkauft markiert",
+                                    sold = changed.associateWith { soldAt })
+                                session.pendingUndo.value = session.pendingUndo.value?.plus(undo) ?: undo
+                            }
+                            val skipped = ids.distinct().size - changed.size
+                            message = when {
+                                skipped == 0 -> message
+                                expected != null -> if (skipped == 1) "1 Buch nicht markiert: Sein Angebot hat sich inzwischen geändert oder es ist schon verkauft."
+                                    else "$skipped Bücher nicht markiert: Ihr Angebot hat sich inzwischen geändert oder sie sind schon verkauft."
+                                else -> if (skipped == 1) "1 Buch war schon als verkauft markiert." else "$skipped Bücher waren schon als verkauft markiert."
+                            }
                         }
+                        onDone(changed != null)
                     }
                 }
+                val markSold: (List<String>) -> Unit = { ids -> markSoldChecked(ids, null) {} }
                 val deleteBook: (BookEntity) -> Unit = { book ->
                     scope.launch {
                         // Undo restores the row as it was deleted, including a check finished meanwhile.
@@ -411,7 +427,7 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(checkRun) {
                     checkRun?.let { run ->
                         if (run.finishedAt != null && run.pausedReason == null && run.startedAt != dismissedSummaryRun) {
-                            momoxSummary = MomoxSummary(run.available, run.unavailable, run.failed, run.valueCents.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+                            momoxSummary = MomoxSummary(run.available, run.unavailable, run.failed, run.valueCents)
                         }
                     }
                 }
@@ -456,7 +472,7 @@ class MainActivity : ComponentActivity() {
                 }
                 if (saleOpen) {
                     SaleScreen(books, onClose = { saleOpen = false }, onRecheck = runMomoxCheck,
-                        onMarkSold = { ids -> saleOpen = false; markSold(ids) })
+                        onMarkSold = { expected -> markSoldChecked(expected.keys.toList(), expected) { ok -> if (ok) saleOpen = false } })
                     return@BuchRadarTheme
                 }
                 detailsBook?.let { original ->

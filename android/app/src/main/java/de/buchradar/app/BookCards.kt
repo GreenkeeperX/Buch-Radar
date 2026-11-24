@@ -77,7 +77,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-data class MomoxSummary(val available: Int, val unavailable: Int, val errors: Int, val totalValueCents: Int = 0)
+data class MomoxSummary(val available: Int, val unavailable: Int, val errors: Int, val totalValueCents: Long = 0)
 
 internal fun formatDateTime(millis: Long): String = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.GERMANY).format(Date(millis))
 
@@ -153,7 +153,7 @@ internal fun MomoxActionRow(summary: MomoxSummary?, expanded: Boolean, canCheck:
                 Text(if (summary == null) "Ankaufpreise bei Momox prüfen" else "Momox prüfen")
             }
         }
-        if (summary != null && expanded) Text("Ankaufwert dieser Prüfung: ${formatEuro(summary.totalValueCents.toLong())}",
+        if (summary != null && expanded) Text("Ankaufwert dieser Prüfung: ${formatEuro(summary.totalValueCents)}",
             style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 4.dp))
     }
 }

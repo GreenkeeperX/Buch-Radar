@@ -48,7 +48,8 @@ object BookListQuery {
     }
 
     /** Price that is currently offered; other states never count as a price. */
-    fun offeredCents(book: BookEntity): Int? = book.currentPriceCents?.takeIf { book.momoxStatus == "AVAILABLE" }
+    /** The offer a sale can count on: an available book with a positive price. Overview and sale list share it. */
+    fun offeredCents(book: BookEntity): Int? = book.currentPriceCents?.takeIf { book.momoxStatus == "AVAILABLE" && it > 0 }
 
     fun apply(books: List<BookEntity>, query: String, filter: String, sort: String, soldView: Boolean): List<BookEntity> {
         val terms = fold(query).split(' ').filter(String::isNotBlank)

@@ -17,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
@@ -41,20 +42,59 @@ fun SaleScreen(
     books: List<BookEntity>,
     onClose: () -> Unit,
     onRecheck: (List<BookEntity>) -> Unit,
-    onMarkSold: (List<String>) -> Unit
+    /** Chosen ids with the offer shown for each; books whose offer changed meanwhile are left alone. */
+    onMarkSold: (Map<String, Int?>) -> Unit
 ) {
     val context = LocalContext.current
     val scheme = MaterialTheme.colorScheme
     val status = LocalStatusColors.current
     val dao = remember { BuchRadarDatabase.get(context).bookDao() }
     val pending by dao.observePendingIsbns().collectAsState(initial = emptyList())
+    val run by dao.observeRun().collectAsState(initial = null)
+    val paused = run?.takeIf { it.finishedAt == null }?.pausedReason
     val candidates = remember(books) { SaleList.candidates(books) }
-    // Unticked books stay unticked; everything else, including books that become available later, is chosen.
-    var excluded by rememberSaveable { mutableStateOf(emptyList<String>()) }
-    val chosen = candidates.filter { it.id !in excluded }
+    // The choice is fixed when the screen opens: a book that becomes available while it is open
+    // appears unticked, so nothing is shared or marked without being chosen here.
+    var chosenIds by rememberSaveable { mutableStateOf<List<String>?>(null) }
+    LaunchedEffect(candidates.isNotEmpty()) { if (chosenIds == null && candidates.isNotEmpty()) chosenIds = candidates.map { it.id } }
+    val chosenSet = chosenIds.orEmpty().toSet()
+    val chosen = candidates.filter { it.id in chosenSet }
     val now = System.currentTimeMillis()
     val stale = chosen.filter { SaleList.needsRecheck(it, now) && it.isbn !in pending }
     val total = SaleList.totalCents(chosen)
+    // Little height (landscape, split screen): the actions scroll with the list instead of staying fixed.
+    val compact = LocalConfiguration.current.screenHeightDp < 520
+    var shareFailed by remember { mutableStateOf(false) }
+    val actions: @Composable () -> Unit = {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth().semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically) {
+                Text(if (chosen.size == 1) "1 Buch ausgewählt" else "${chosen.size} Bücher ausgewählt",
+                    Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+                Text(formatEuro(total), style = MaterialTheme.typography.titleLarge, color = status.success, fontWeight = FontWeight.Bold)
+            }
+            if (chosen.isNotEmpty() && total < SaleList.MINIMUM_CENTS) Text(
+                "Noch ${formatEuro(SaleList.MINIMUM_CENTS - total)} bis zum Mindestankaufswert von ${formatEuro(SaleList.MINIMUM_CENTS.toLong())}.",
+                style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+            if (shareFailed) Text("Teilen ist fehlgeschlagen. Wähle weniger Bücher aus und versuche es erneut.",
+                style = MaterialTheme.typography.bodyMedium, color = scheme.error)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = {
+                    val send = Intent(Intent.ACTION_SEND).setType("text/plain")
+                        .putExtra(Intent.EXTRA_SUBJECT, "Bücher für Momox")
+                        .putExtra(Intent.EXTRA_TEXT, SaleList.shareText(chosen, System.currentTimeMillis()))
+                    // A very long list can exceed what an intent may carry; say so instead of crashing.
+                    shareFailed = runCatching { context.startActivity(Intent.createChooser(send, "Liste teilen")) }.isFailure
+                }, enabled = chosen.isNotEmpty(), modifier = Modifier.heightIn(min = 52.dp)) {
+                    Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.padding(end = 8.dp)); Text("Teilen")
+                }
+                Button(onClick = { onMarkSold(chosen.associate { it.id to BookListQuery.offeredCents(it) }) }, enabled = chosen.isNotEmpty(),
+                    modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
+                    Icon(painterResource(R.drawable.ic_sold), contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+                    Text("Als verkauft markieren")
+                }
+            }
+        }
+    }
     BackHandler(onBack = onClose)
     Box(Modifier.fillMaxSize().background(scheme.surface)) {
         Scaffold(
@@ -65,33 +105,7 @@ fun SaleScreen(
                 })
             },
             bottomBar = {
-                if (candidates.isNotEmpty()) Surface(color = scheme.surfaceContainer, shadowElevation = 8.dp) {
-                    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(Modifier.fillMaxWidth().semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically) {
-                            Text(if (chosen.size == 1) "1 Buch ausgewählt" else "${chosen.size} Bücher ausgewählt",
-                                Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-                            Text(formatEuro(total), style = MaterialTheme.typography.titleLarge, color = status.success, fontWeight = FontWeight.Bold)
-                        }
-                        if (chosen.isNotEmpty() && total < SaleList.MINIMUM_CENTS) Text(
-                            "Noch ${formatEuro(SaleList.MINIMUM_CENTS - total)} bis zum Mindestankaufswert von ${formatEuro(SaleList.MINIMUM_CENTS.toLong())}.",
-                            style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(onClick = {
-                                val send = Intent(Intent.ACTION_SEND).setType("text/plain")
-                                    .putExtra(Intent.EXTRA_SUBJECT, "Bücher für Momox")
-                                    .putExtra(Intent.EXTRA_TEXT, SaleList.shareText(chosen, System.currentTimeMillis()))
-                                context.startActivity(Intent.createChooser(send, "Liste teilen"))
-                            }, enabled = chosen.isNotEmpty(), modifier = Modifier.heightIn(min = 52.dp)) {
-                                Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.padding(end = 8.dp)); Text("Teilen")
-                            }
-                            Button(onClick = { onMarkSold(chosen.map { it.id }) }, enabled = chosen.isNotEmpty(),
-                                modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
-                                Icon(painterResource(R.drawable.ic_sold), contentDescription = null, modifier = Modifier.padding(end = 8.dp))
-                                Text("Als verkauft markieren")
-                            }
-                        }
-                    }
-                }
+                if (candidates.isNotEmpty() && !compact) Surface(color = scheme.surfaceContainer, shadowElevation = 8.dp) { actions() }
             }
         ) { padding ->
             LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -100,21 +114,26 @@ fun SaleScreen(
                         Text(if (candidates.isEmpty()) "Momox kauft laut letzter Prüfung keines deiner Bücher an. Prüfe die Liste erneut, um aktuelle Angebote zu sehen."
                             else "Diese Bücher kauft Momox laut letzter Prüfung an. Die Preise sind kein verbindliches Angebot; maßgeblich ist das Angebot beim Verkauf.",
                             style = MaterialTheme.typography.bodyLarge)
+                        paused?.let { Text("Neuprüfung angehalten: $it", style = MaterialTheme.typography.bodyMedium, color = scheme.error) }
                         if (stale.isNotEmpty()) FilledTonalButton(onClick = { onRecheck(stale) }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                             Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
                             Text(if (stale.size == 1) "1 älteren Preis neu prüfen" else "${stale.size} ältere Preise neu prüfen")
                         }
                     }
                 }
+                if (compact && candidates.isNotEmpty()) item(key = "static:actions") {
+                    Surface(color = scheme.surfaceContainer, shape = MaterialTheme.shapes.medium) { actions() }
+                }
                 items(candidates, key = { it.id }) { book ->
-                    val selected = book.id !in excluded
+                    val selected = book.id in chosenSet
                     val queued = book.isbn in pending
                     Card(colors = CardDefaults.cardColors(containerColor = if (selected) scheme.surfaceContainer else scheme.surface),
                         modifier = Modifier.fillMaxWidth()) {
                         Row(
                             Modifier.fillMaxWidth().heightIn(min = 64.dp)
                                 .toggleable(value = selected, role = Role.Checkbox, onValueChange = { on ->
-                                    excluded = if (on) excluded - book.id else excluded + book.id
+                                    val current = chosenIds.orEmpty()
+                                    chosenIds = if (on) current + book.id else current - book.id
                                 })
                                 .padding(horizontal = 8.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -126,6 +145,7 @@ fun SaleScreen(
                                 book.author?.takeIf(String::isNotBlank)?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant) }
                                 Text(BookInputFormat.screenIsbn(book.isbn), style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
                                 when {
+                                    queued && paused != null -> Text("Neuprüfung angehalten", style = MaterialTheme.typography.bodyMedium, color = scheme.error)
                                     queued -> Text("Wird gerade neu geprüft …", style = MaterialTheme.typography.bodyMedium, color = scheme.primary)
                                     SaleList.needsRecheck(book, now) -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                         Icon(Icons.Filled.Warning, contentDescription = null, tint = scheme.tertiary, modifier = Modifier.size(18.dp))

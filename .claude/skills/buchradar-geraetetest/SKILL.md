@@ -36,6 +36,11 @@ Die echte App `de.buchradar.app` enthält die private Bücherliste. Jeder Schrit
 ## Systemeinstellungen zurücksetzen
 
 Jeden Wert vor einer Änderung notieren (`settings get system font_scale`, `user_rotation`, `screen_off_timeout`) und danach wiederherstellen. Abschaltzeit und Helligkeit nicht verändern.
+Der Barrierefreiheits-Audit (`-e a11yAudit true`) ändert `font_scale` selbst und legt den Ausgangswert
+unter `settings get global buchradar_a11y_font_scale_backup` ab. Trotzdem auf dem Host sichern und
+in jedem Fall zurücksetzen, z. B. `orig=$(adb shell settings get system font_scale)` vor dem Lauf und
+danach `adb shell settings put system font_scale "$orig"` (bei `null`: `adb shell settings delete system font_scale`),
+dann prüfen, dass der Wert stimmt und der Sicherungsschlüssel gelöscht ist.
 
 ## Bericht
 
