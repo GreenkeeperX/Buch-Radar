@@ -15,7 +15,7 @@ internal data class SpineEdge(val x: Float, val slope: Float, val strength: Floa
 }
 
 /** Long, consistently directed colour transitions; short glyph edges should not split books. */
-internal fun spineEdges(pixels: IntArray, width: Int, height: Int): List<SpineEdge> {
+internal fun spineEdges(pixels: IntArray, width: Int, height: Int, bandTop: Float = .23f, bandBottom: Float = .88f): List<SpineEdge> {
     if (width < 32 || height < 32 || pixels.size != width * height) return emptyList()
     val candidates = mutableListOf<SpineEdge>()
     val rows = 48
@@ -26,7 +26,7 @@ internal fun spineEdges(pixels: IntArray, width: Int, height: Int): List<SpineEd
             val red = IntArray(rows); val green = IntArray(rows); val blue = IntArray(rows)
             var count = 0
             for (row in 0 until rows) {
-                val y = (height * (.23f + .65f * row / (rows - 1))).toInt().coerceIn(0, height - 1)
+                val y = (height * (bandTop + (bandBottom - bandTop) * row / (rows - 1))).toInt().coerceIn(0, height - 1)
                 val xx = (x + slope * (y - height * .55f)).toInt()
                 if (xx - delta < 0 || xx + delta >= width) continue
                 val a = pixels[y * width + xx - delta]; val b = pixels[y * width + xx + delta]
@@ -50,6 +50,21 @@ internal fun spineEdges(pixels: IntArray, width: Int, height: Int): List<SpineEd
     return selected.sortedBy { it.x }
 }
 
+/**
+ * Vertical range to sample for book edges. Edges must run through the whole sampled range, so
+ * a fixed 23–88 % of the photo failed whenever the books filled only part of it (shelf board,
+ * wall or a second row in view). The range now follows the vertical spine lettering.
+ */
+internal fun spineBand(pieces: List<OcrPiece>, imageHeight: Int): Pair<Float, Float> {
+    val vertical = pieces.filter { abs(it.angle % 180) in 55f..125f }
+    if (vertical.size < 2 || imageHeight <= 0) return .23f to .88f
+    val top = vertical.minOf { it.top } / imageHeight
+    val bottom = vertical.maxOf { it.bottom } / imageHeight
+    val pad = .05f
+    val band = (top - pad).coerceAtLeast(.02f) to (bottom + pad).coerceAtMost(.98f)
+    return if (band.second - band.first >= .2f) band else .23f to .88f
+}
+
 internal data class ShelfRegionText(val text: String, val left: Float, val right: Float)
 internal data class ShelfImageResult(val readings: List<ShelfRegionText>, val regions: Int, val exhausted: Boolean) {
     val texts get() = readings.map { it.text }.filter { it.count(Char::isLetter) >= 4 }
@@ -65,7 +80,8 @@ internal suspend fun readShelfRegions(bitmap: Bitmap, recognizer: TextRecognizer
     sample.getPixels(pixels, 0, sampleWidth, 0, 0, sampleWidth, sampleHeight)
     if (sample !== bitmap) sample.recycle()
     val scale = bitmap.width.toFloat() / sampleWidth
-    val edges = spineEdges(pixels, sampleWidth, sampleHeight).map { it.copy(x = it.x * scale) }.filter { edge ->
+    val (bandTop, bandBottom) = spineBand(protectedPieces, bitmap.height)
+    val edges = spineEdges(pixels, sampleWidth, sampleHeight, bandTop, bandBottom).map { it.copy(x = it.x * scale) }.filter { edge ->
         // Vertical lettering is not a binding edge; horizontal lines may already span books.
         protectedPieces.none { p -> abs(p.angle % 180) in 55f..125f && p.width < bitmap.width * .05f && edge.x > p.left && edge.x < p.right }
     }

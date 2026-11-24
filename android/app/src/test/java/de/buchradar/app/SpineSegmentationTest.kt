@@ -1,5 +1,7 @@
 package de.buchradar.app
 
+import de.buchradar.app.scanner.OcrPiece
+import de.buchradar.app.scanner.spineBand
 import de.buchradar.app.scanner.spineEdges
 import org.junit.Assert.*
 import org.junit.Test
@@ -32,5 +34,28 @@ class SpineSegmentationTest {
     @Test fun flatImageDoesNotInventBooks() {
         assertTrue(spineEdges(IntArray(320 * 240) { 0xff334455.toInt() }, 320, 240).isEmpty())
         assertTrue(spineEdges(IntArray(3), 320, 240).isEmpty())
+    }
+
+    @Test fun booksInLowerHalfAreFoundWithinTheLetteringBand() {
+        // Books only in the lower 35 % (shelf board and wall above): the fixed band misses them.
+        val width = 320; val height = 400
+        val colors = intArrayOf(0xffeeeeee.toInt(), 0xff226644.toInt(), 0xffddddbb.toInt(), 0xff772222.toInt())
+        val pixels = IntArray(width * height) { index ->
+            val x = index % width; val y = index / width
+            if (y < 260) 0xff808080.toInt() else colors[x / 80]
+        }
+        assertTrue(spineEdges(pixels, width, height).size < 3)
+        val lettering = listOf(
+            OcrPiece("Hestia", 30f, 280f, 50f, 380f, 90f),
+            OcrPiece("Der Feind", 110f, 275f, 130f, 385f, 270f))
+        val (top, bottom) = spineBand(lettering, height)
+        assertTrue(top > .5f && bottom < 1f)
+        val edges = spineEdges(pixels, width, height, top, bottom)
+        listOf(80, 160, 240).forEach { expected -> assertTrue(edges.any { abs(it.x - expected) <= 3 }) }
+    }
+
+    @Test fun bandFallsBackWithoutVerticalLettering() {
+        assertEquals(.23f to .88f, spineBand(emptyList(), 400))
+        assertEquals(.23f to .88f, spineBand(listOf(OcrPiece("Titel", 0f, 10f, 100f, 30f, 0f)), 400))
     }
 }
