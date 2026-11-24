@@ -124,7 +124,7 @@ fun SaleScreen(
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text(book.title ?: "Unbekannter Titel", style = MaterialTheme.typography.titleMedium)
                                 book.author?.takeIf(String::isNotBlank)?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant) }
-                                Text("ISBN ${BookInputFormat.displayIsbn(book.isbn)}", style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+                                Text(BookInputFormat.screenIsbn(book.isbn), style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
                                 when {
                                     queued -> Text("Wird gerade neu geprüft …", style = MaterialTheme.typography.bodyMedium, color = scheme.primary)
                                     SaleList.needsRecheck(book, now) -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {

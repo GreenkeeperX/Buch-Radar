@@ -86,7 +86,7 @@ fun BookDetailsScreen(
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text(book.title ?: "Unbekannter Titel", style = MaterialTheme.typography.headlineSmall)
                             book.author?.let { Text(it, style = MaterialTheme.typography.titleMedium, color = scheme.onSurfaceVariant) }
-                            Text(if (book.isbn.isBlank()) "Keine ISBN – manuell erfasst" else "ISBN ${BookInputFormat.displayIsbn(book.isbn)}", style = MaterialTheme.typography.bodyLarge)
+                            Text(if (book.isbn.isBlank()) "Keine ISBN – manuell erfasst" else BookInputFormat.screenIsbn(book.isbn), style = MaterialTheme.typography.bodyLarge)
                             book.publicationYear?.let { Text("Erscheinungsjahr $it", style = MaterialTheme.typography.bodyMedium) }
                             MomoxStatusPill(book)
                             book.lastCheckedAt?.let { Text("Stand ${formatDateTime(it)}", style = MaterialTheme.typography.labelLarge, color = scheme.onSurfaceVariant) }

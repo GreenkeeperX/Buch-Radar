@@ -110,6 +110,9 @@ object BookInputFormat {
     // the remaining digits. Input is normalised only when it is submitted.
 
     fun displayIsbn(value: String): String = parseIsbn(value)?.toString() ?: value
+
+    /** On screen: "ISBN" plus the number joined by non-breaking hyphens, so large fonts never split the number. */
+    fun screenIsbn(value: String): String = "ISBN\u00A0" + displayIsbn(value).replace('-', '\u2011')
 }
 
 enum class MessageTone { INFO, SUCCESS, ERROR, PROGRESS }

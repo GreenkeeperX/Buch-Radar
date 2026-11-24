@@ -192,7 +192,7 @@ internal fun BookCard(
                 Text(book.title ?: "Unbekannter Titel", style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 book.author?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 Text(
-                    (if (book.isbn.isBlank()) "ISBN fehlt" else "ISBN ${BookInputFormat.displayIsbn(book.isbn)}") + (book.publicationYear?.let { " · $it" } ?: ""),
+                    (if (book.isbn.isBlank()) "ISBN fehlt" else BookInputFormat.screenIsbn(book.isbn)) + (book.publicationYear?.let { " · $it" } ?: ""),
                     style = MaterialTheme.typography.labelLarge, color = scheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis
                 )
                 Spacer(Modifier.height(4.dp))
@@ -249,7 +249,7 @@ internal fun CandidateCard(candidate: CatalogBook, alreadyAdded: Boolean, isSold
                 listOfNotNull(candidate.publisher, candidate.publicationYear?.toString()).takeIf { it.isNotEmpty() }?.let {
                     Text(it.joinToString(" · "), style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
                 }
-                Text(candidate.isbn?.let { "ISBN ${BookInputFormat.displayIsbn(it)}" } ?: "Keine ISBN",
+                Text(candidate.isbn?.let { BookInputFormat.screenIsbn(it) } ?: "Keine ISBN",
                     style = MaterialTheme.typography.labelLarge, color = scheme.primary, fontWeight = FontWeight.Bold)
                 candidate.textSimilarity?.let {
                     val (label, container, content) = when {
