@@ -40,7 +40,7 @@ object BookListQuery {
         .trim()
 
     fun matchesStatus(book: BookEntity, filter: String): Boolean = when (filter) {
-        FILTER_AVAILABLE -> book.momoxStatus == "AVAILABLE"
+        FILTER_AVAILABLE -> offeredCents(book) != null
         FILTER_UNAVAILABLE -> book.momoxStatus == "NOT_AVAILABLE"
         FILTER_UNCHECKED -> book.isbn.isNotBlank() && book.lastCheckedAt == null
         FILTER_ERROR -> book.lastAttemptStatus == "ERROR" || book.momoxStatus == "ERROR"

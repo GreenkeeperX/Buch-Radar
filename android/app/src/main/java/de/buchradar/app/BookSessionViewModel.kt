@@ -45,6 +45,8 @@ class BookSessionViewModel(application: Application) : AndroidViewModel(applicat
     val pendingUndo = mutableStateOf<PendingUndo?>(null)
     val settingsOpen = mutableStateOf(false)
     val saleOpen = mutableStateOf(false)
+    /** Ids chosen on the sale screen; kept here rather than in the saved state, which large lists would overflow. */
+    val saleDraft = mutableStateOf<List<String>?>(null)
     val showSoldBooks = mutableStateOf(false)
     val selectionMode = mutableStateOf(false)
     val selectedIsbns = mutableStateOf<Set<String>>(emptySet())

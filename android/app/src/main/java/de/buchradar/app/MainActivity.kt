@@ -286,7 +286,7 @@ class MainActivity : ComponentActivity() {
                             val skipped = undo.deleted.count { book -> dao.insert(book) == -1L }
                             if (skipped > 0) message = if (skipped == 1) "Nicht wiederhergestellt: Diese ISBN ist inzwischen wieder in der Liste."
                                 else "$skipped Bücher nicht wiederhergestellt: Ihre ISBN ist inzwischen wieder in der Liste."
-                            undo.sold.entries.groupBy({ it.value }, { it.key }).forEach { (soldAt, ids) -> dao.undoSold(ids, soldAt) }
+                            if (undo.sold.isNotEmpty()) dao.undoSales(undo.sold)
                         }
                         if (outcome.isFailure) message = "Rückgängig machen fehlgeschlagen."
                     }
@@ -382,29 +382,25 @@ class MainActivity : ComponentActivity() {
                             else "Zurückholen fehlgeschlagen. Bitte erneut versuchen."
                     }
                 }
-                // Marks only books that are still active (and, from the sale screen, still at the shown offer);
-                // the undo and the message name exactly the rows that changed. onDone(true) after the write.
-                val markSoldChecked: (List<String>, Map<String, Int?>?, (Boolean) -> Unit) -> Unit = { ids, expected, onDone ->
+                // Marks only books that are still active; from the sale screen all or nothing at the shown
+                // offers. The undo and the message name exactly the rows that changed.
+                // onDone: null = failed, false = offers changed (nothing written), true = written.
+                val markSoldChecked: (List<String>, Map<String, Int?>?, (Boolean?) -> Unit) -> Unit = { ids, expected, onDone ->
                     scope.launch {
                         val soldAt = System.currentTimeMillis()
                         val marked = catchingOperation { dao.markSold(ids, soldAt, expected) }
                         val changed = marked.getOrNull()
-                        if (changed == null) message = "Markieren fehlgeschlagen. Bitte erneut versuchen."
-                        else {
+                        if (marked.isFailure) message = "Markieren fehlgeschlagen. Bitte erneut versuchen."
+                        else if (changed != null) {
                             if (changed.isNotEmpty()) {
                                 val undo = PendingUndo(if (changed.size == 1) "Als verkauft markiert" else "${changed.size} Bücher als verkauft markiert",
                                     sold = changed.associateWith { soldAt })
                                 session.pendingUndo.value = session.pendingUndo.value?.plus(undo) ?: undo
                             }
                             val skipped = ids.distinct().size - changed.size
-                            message = when {
-                                skipped == 0 -> message
-                                expected != null -> if (skipped == 1) "1 Buch nicht markiert: Sein Angebot hat sich inzwischen geändert oder es ist schon verkauft."
-                                    else "$skipped Bücher nicht markiert: Ihr Angebot hat sich inzwischen geändert oder sie sind schon verkauft."
-                                else -> if (skipped == 1) "1 Buch war schon als verkauft markiert." else "$skipped Bücher waren schon als verkauft markiert."
-                            }
+                            if (skipped > 0) message = if (skipped == 1) "1 Buch war schon als verkauft markiert." else "$skipped Bücher waren schon als verkauft markiert."
                         }
-                        onDone(changed != null)
+                        onDone(if (marked.isFailure) null else changed != null)
                     }
                 }
                 val markSold: (List<String>) -> Unit = { ids -> markSoldChecked(ids, null) {} }
@@ -471,8 +467,17 @@ class MainActivity : ComponentActivity() {
                     return@BuchRadarTheme
                 }
                 if (saleOpen) {
-                    SaleScreen(books, onClose = { saleOpen = false }, onRecheck = runMomoxCheck,
-                        onMarkSold = { expected -> markSoldChecked(expected.keys.toList(), expected) { ok -> if (ok) saleOpen = false } })
+                    val draft = session.saleDraft
+                    SaleScreen(books, chosenIds = draft.value, onChosenChange = { draft.value = it },
+                        onClose = { saleOpen = false }, onRecheck = runMomoxCheck,
+                        onMarkSold = { expected, onResult ->
+                            val sent = draft.value
+                            markSoldChecked(expected.keys.toList(), expected) { outcome ->
+                                onResult(outcome)
+                                // Only the draft that was sent closes; a newer one opened meanwhile stays.
+                                if (outcome == true && draft.value === sent) saleOpen = false
+                            }
+                        })
                     return@BuchRadarTheme
                 }
                 detailsBook?.let { original ->
@@ -851,7 +856,7 @@ class MainActivity : ComponentActivity() {
                             item(key = LIST_HEADER_KEY) {
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     if (books.isNotEmpty() || showSoldBooks) ListOverview(if (showSoldBooks) "Verkaufte Bücher" else "Meine Bücher", totals, showValue = !showSoldBooks,
-                                        onSell = if (!showSoldBooks && !selectionMode) ({ keyboard?.hide(); saleOpen = true }) else null)
+                                        onSell = if (!showSoldBooks && !selectionMode) ({ keyboard?.hide(); session.saleDraft.value = null; saleOpen = true }) else null)
                                     // Progress and controls follow the run, even if no active book is left.
                                     if (!showSoldBooks && (books.isNotEmpty() || isCheckingMomox || momoxSummary != null)) {
                                         if (isCheckingMomox) Card(colors = CardDefaults.cardColors(containerColor = colorScheme.secondaryContainer), modifier = Modifier.fillMaxWidth()) {

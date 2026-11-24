@@ -125,25 +125,34 @@ interface BookDao {
         ids.distinct().chunked(SQL_CHUNK).sumOf { updateSoldStatusRaw(it, soldAt) }
 
     /**
-     * Marks active books sold at [soldAt] and returns the ids actually changed. A book sold
-     * meanwhile keeps its own date; with [expectedCents] (id to offered cents, as shown when the
-     * user chose), a book whose offer changed since is left alone, so a stale screen sells nothing.
+     * Marks active books sold at [soldAt] and returns the ids actually changed; a book sold
+     * meanwhile keeps its own date. With [expectedCents] (id to the offer shown when the user
+     * chose) the sale is all or nothing: if any book is gone, sold or at another offer, nothing
+     * is written and null comes back, so the user decides again on current prices.
      */
     @Transaction
-    suspend fun markSold(ids: List<String>, soldAt: Long, expectedCents: Map<String, Int?>? = null): List<String> =
-        ids.distinct().chunked(SQL_CHUNK).flatMap { chunk ->
-            val ready = getByIds(chunk).filter { book ->
-                book.soldAt == null && (expectedCents == null ||
-                    (book.currentPriceCents.takeIf { book.momoxStatus == "AVAILABLE" }) == expectedCents[book.id])
-            }.map { it.id }
-            if (ready.isNotEmpty()) updateSoldStatusRaw(ready, soldAt)
-            ready
+    suspend fun markSold(ids: List<String>, soldAt: Long, expectedCents: Map<String, Int?>? = null): List<String>? {
+        val wanted = ids.distinct()
+        val rows = wanted.chunked(SQL_CHUNK).flatMap { getByIds(it) }
+        if (expectedCents != null) {
+            val byId = rows.associateBy { it.id }
+            val unchanged = wanted.all { id ->
+                val book = byId[id] ?: return@all false
+                book.soldAt == null && book.currentPriceCents?.takeIf { book.momoxStatus == "AVAILABLE" && it > 0 } == expectedCents[id]
+            }
+            if (!unchanged) return null
         }
+        val ready = rows.filter { it.soldAt == null }.map { it.id }
+        ready.chunked(SQL_CHUNK).forEach { updateSoldStatusRaw(it, soldAt) }
+        return ready
+    }
 
-    /** Undo of one sale: only rows still carrying that sale's date go back to the list. */
+    /** Undo of sales (id to that sale's date) in one transaction: only rows still carrying that date return. */
     @Transaction
-    suspend fun undoSold(ids: List<String>, soldAt: Long): Int =
-        ids.distinct().chunked(SQL_CHUNK).sumOf { clearSoldAtRaw(it, soldAt) }
+    suspend fun undoSales(sold: Map<String, Long>): Int =
+        sold.entries.groupBy({ it.value }, { it.key }).entries.sumOf { (soldAt, ids) ->
+            ids.chunked(SQL_CHUNK).sumOf { clearSoldAtRaw(it, soldAt) }
+        }
 
     @Query("UPDATE books SET lastError = :message WHERE isbn = :isbn")
     suspend fun setCheckError(isbn: String, message: String?)

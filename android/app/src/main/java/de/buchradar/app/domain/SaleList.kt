@@ -44,7 +44,8 @@ object SaleList {
             append("Preise laut letzter Prüfung")
             oldest?.let { append(" (älteste vom ").append(day.format(Date(it))).append(")") }
             append(". Maßgeblich ist das Angebot beim Verkauf.")
-            if (books.any { it.lastCheckedAt == null || now - it.lastCheckedAt >= STALE_AFTER_MILLIS }) append(" Einige Preise sind älter als ein Tag.")
+            if (books.any { it.lastCheckedAt != null && now - it.lastCheckedAt >= STALE_AFTER_MILLIS }) append(" Einige Preise sind älter als ein Tag.")
+            if (books.any { it.lastCheckedAt == null }) append(" Einige Preise haben kein Prüfdatum.")
             if (books.any { it.lastAttemptStatus == "ERROR" }) append(" Bei einigen ist die letzte Prüfung fehlgeschlagen.")
         }
     }

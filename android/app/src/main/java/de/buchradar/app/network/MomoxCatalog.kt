@@ -65,7 +65,15 @@ object MomoxCatalog {
             val code = error.code()
             Log.w(TAG, "HTTP $code after ${SystemClock.elapsedRealtime() - startedAt} ms")
             throw MomoxCheckException(httpFailureMessage(code), error, retryable = code == 429 || code >= 500, pauseQueue = code in listOf(401, 403, 404), retryAfterSeconds = error.response()?.headers()?.get("Retry-After")?.toLongOrNull())
+        } catch (error: com.squareup.moshi.JsonDataException) {
+            // Readable JSON with unexpected types: the same "unreadable answer" rule as an unknown status.
+            Log.w(TAG, "Unreadable response: ${error.javaClass.simpleName}")
+            throw MomoxCheckException("Momox-Antwort nicht lesbar (unerwartete Felder)", error, retryable = false, unknownFormat = true)
         } catch (error: IOException) {
+            if (error is com.squareup.moshi.JsonEncodingException) {
+                Log.w(TAG, "Unreadable response: ${error.javaClass.simpleName}")
+                throw MomoxCheckException("Momox-Antwort nicht lesbar (kein gültiges JSON)", error, retryable = false, unknownFormat = true)
+            }
             val category = when (error) {
                 is UnknownHostException -> "DNS: Momox-Server nicht erreichbar"
                 is SocketTimeoutException -> "Timeout: Momox antwortet nicht rechtzeitig"

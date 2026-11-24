@@ -121,6 +121,8 @@ internal fun MomoxActionRow(summary: MomoxSummary?, expanded: Boolean, canCheck:
     onToggle: () -> Unit, onDismiss: () -> Unit, onCheck: () -> Unit) {
     val status = LocalStatusColors.current
     val scheme = MaterialTheme.colorScheme
+    // With large fonts result and check button get their own lines, so the counts are never cut.
+    val stacked = summary != null && androidx.compose.ui.platform.LocalConfiguration.current.fontScale >= 1.3f
     Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             if (summary != null) {
@@ -140,18 +142,24 @@ internal fun MomoxActionRow(summary: MomoxSummary?, expanded: Boolean, canCheck:
                             append(" · ${summary.unavailable} ohne")
                             if (summary.errors > 0) withStyle(SpanStyle(color = scheme.error, fontWeight = FontWeight.Bold)) { append(" · ${summary.errors} Fehler") }
                         },
-                        style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis
+                        style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant,
+                        maxLines = if (stacked) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis
                     )
                 }
                 IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, contentDescription = "Ergebnis ausblenden", tint = scheme.onSurfaceVariant) }
             }
             // Without a result the button alone says what it does and takes the full width.
-            if (canCheck) FilledTonalButton(onClick = onCheck, contentPadding = PaddingValues(horizontal = 14.dp),
+            if (canCheck && !stacked) FilledTonalButton(onClick = onCheck, contentPadding = PaddingValues(horizontal = 14.dp),
                 modifier = if (summary == null) Modifier.fillMaxWidth().heightIn(min = 48.dp) else Modifier.heightIn(min = 48.dp)) {
                 Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
                 Text(if (summary == null) "Ankaufpreise bei Momox prüfen" else "Momox prüfen")
             }
+        }
+        if (canCheck && stacked) FilledTonalButton(onClick = onCheck, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+            Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Momox prüfen")
         }
         if (summary != null && expanded) Text("Ankaufwert dieser Prüfung: ${formatEuro(summary.totalValueCents)}",
             style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 4.dp))

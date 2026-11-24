@@ -122,8 +122,9 @@ fun StatusPill(text: String, container: Color, content: Color, modifier: Modifie
 fun MomoxStatusPill(book: BookEntity, modifier: Modifier = Modifier) {
     val status = LocalStatusColors.current
     val scheme = MaterialTheme.colorScheme
-    if (book.isbn.isNotBlank() && book.momoxStatus == "AVAILABLE") {
-        val label = formatEuro((book.currentPriceCents ?: 0).toLong())
+    val offered = de.buchradar.app.domain.BookListQuery.offeredCents(book)
+    if (book.isbn.isNotBlank() && offered != null) {
+        val label = formatEuro(offered.toLong())
         StatusPill(label, status.successContainer, status.onSuccessContainer, modifier.semantics { contentDescription = "Momox-Ankauf: $label" }, strong = true)
         return
     }
