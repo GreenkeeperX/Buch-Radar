@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
@@ -89,9 +90,16 @@ fun BookScannerView(
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     // The scanner shares the Activity window with the list. Inset its preview and controls together.
     Box(modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).safeDrawingPadding().background(Color.Black)) {
-        AndroidView(factory = { preview }, modifier = Modifier.fillMaxSize())
+        // The preview uses only the space above the control panel. When recognised text makes the
+        // panel taller, the camera image moves up and shrinks instead of being covered.
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        var panelHeight by remember { mutableStateOf(0.dp) }
+        AndroidView(factory = { preview }, modifier = Modifier.fillMaxSize().padding(bottom = panelHeight))
         Surface(
-            modifier = Modifier.align(Alignment.BottomCenter).widthIn(max = 560.dp).fillMaxWidth().padding(8.dp),
+            // At most 40 % of the height, so the camera image keeps the larger part; the panel scrolls inside.
+            modifier = Modifier.align(Alignment.BottomCenter).widthIn(max = 560.dp).fillMaxWidth().padding(8.dp)
+                .heightIn(max = LocalConfiguration.current.screenHeightDp.dp * .4f)
+                .onSizeChanged { panelHeight = with(density) { it.height.toDp() } + 16.dp },
             shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.surfaceContainer
         ) {
