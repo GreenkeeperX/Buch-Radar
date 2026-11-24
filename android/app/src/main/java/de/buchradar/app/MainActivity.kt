@@ -1,5 +1,15 @@
 package de.buchradar.app
 
+import androidx.compose.ui.input.key.type
+
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+
+import androidx.compose.ui.input.key.key
+
+import androidx.compose.ui.input.key.KeyEventType
+
+import androidx.compose.ui.input.key.Key
+
 import kotlinx.coroutines.withTimeoutOrNull
 
 import androidx.compose.foundation.verticalScroll
@@ -709,7 +719,16 @@ class MainActivity : ComponentActivity() {
                                         { IconButton(onClick = { searchInput = ""; coverFrame = null; message = null }) { Icon(Icons.Filled.Clear, contentDescription = "Eingabe löschen") } }
                                     } else null,
                                     shape = RoundedCornerShape(28.dp),
-                                    modifier = Modifier.fillMaxWidth(),
+                                    // Enter on a hardware keyboard searches instead of adding a line break;
+                                    // the field stays multi-line to show recognised text.
+                                    modifier = Modifier.fillMaxWidth().onPreviewKeyEvent { event ->
+                                        if (event.key == Key.Enter || event.key == Key.NumPadEnter) {
+                                            if (event.type == KeyEventType.KeyUp) {
+                                                if (showSoldBooks) keyboard?.hide() else if (searchInput.isNotBlank()) submitInput(searchInput, coverFrame)
+                                            }
+                                            true
+                                        } else false
+                                    },
                                     enabled = !isSearching,
                                     maxLines = 3,
                                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
