@@ -56,6 +56,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
@@ -95,6 +96,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -174,6 +176,27 @@ class MainActivity : ComponentActivity() {
                 val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
                 // From 130 % system font the list gets the same space-saving layout as landscape.
                 val largeFont = LocalConfiguration.current.fontScale >= 1.3f
+                // From 170 % the filter chips would fill the screen; one filter menu replaces them.
+                val hugeFont = LocalConfiguration.current.fontScale >= 1.7f
+                var filterMenuOpen by remember { mutableStateOf(false) }
+                // The scan button steps aside while the list scrolls down, so it never covers a card's
+                // status for long; it returns on scrolling up, at the top and at the end of the list.
+                var fabShown by remember { mutableStateOf(true) }
+                LaunchedEffect(bookListState) {
+                    var last = 0 to 0
+                    snapshotFlow { Triple(bookListState.firstVisibleItemIndex, bookListState.firstVisibleItemScrollOffset, bookListState.canScrollForward) }
+                        .collect { (index, offset, more) ->
+                            val down = index > last.first || (index == last.first && offset > last.second + 24)
+                            val up = index < last.first || (index == last.first && offset < last.second - 24)
+                            if (down || up) last = index to offset
+                            fabShown = when {
+                                index == 0 && offset == 0 || !more -> true
+                                down -> false
+                                up -> true
+                                else -> fabShown
+                            }
+                        }
+                }
                 val session: BookSessionViewModel = viewModel()
                 val scope = session.viewModelScope
                 val uiScope = rememberCoroutineScope()
@@ -455,7 +478,7 @@ class MainActivity : ComponentActivity() {
                     snackbarHost = { SnackbarHost(snackbar) },
                     floatingActionButton = {
                         // Collapses to the camera icon once the list scrolls and in landscape, so it covers less.
-                        if (onListScreen && !showSoldBooks && !selectionMode && searchInput.isBlank()) ExtendedFloatingActionButton(
+                        if (onListScreen && !showSoldBooks && !selectionMode && searchInput.isBlank() && fabShown) ExtendedFloatingActionButton(
                             expanded = !landscape && !largeFont && bookListState.firstVisibleItemIndex == 0,
                             onClick = { if (!isSearching) openScanner(ScannerMode.AUTOMATIC) },
                             icon = { Icon(painterResource(R.drawable.ic_camera), contentDescription = "Buch oder Regal scannen") },
@@ -846,6 +869,21 @@ class MainActivity : ComponentActivity() {
                                             }
                                         }
                                         if (showSoldBooks) Text(BookListQuery.sortLabel(sortMode), style = MaterialTheme.typography.labelLarge, color = colorScheme.onSurfaceVariant)
+                                        else if (hugeFont) Box(Modifier.weight(1f)) {
+                                            val current = BookListQuery.filters.firstOrNull { it.first == statusFilter } ?: BookListQuery.filters.first()
+                                            OutlinedButton(onClick = { filterMenuOpen = true }, modifier = Modifier.heightIn(min = 48.dp)) {
+                                                Text("Filter: ${current.second} ${books.count { BookListQuery.matchesStatus(it, current.first) }}")
+                                                Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
+                                            }
+                                            DropdownMenu(expanded = filterMenuOpen, onDismissRequest = { filterMenuOpen = false }) {
+                                                BookListQuery.filters.forEach { (key, label) ->
+                                                    val count = books.count { BookListQuery.matchesStatus(it, key) }
+                                                    if (key == BookListQuery.FILTER_ALL || count > 0 || statusFilter == key) DropdownMenuItem(
+                                                        text = { Text("$label $count") }, onClick = { statusFilter = key; filterMenuOpen = false },
+                                                        trailingIcon = if (key == statusFilter) { { Icon(Icons.Filled.Check, contentDescription = "Ausgewählt") } } else null)
+                                                }
+                                            }
+                                        }
                                         // Chips wrap instead of scrolling sideways, so no filter hides past the edge.
                                         else FlowRow(
                                             Modifier.weight(1f),
