@@ -22,8 +22,8 @@ android {
         applicationId = "de.buchradar.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 26
-        versionName = "0.14.0"
+        versionCode = 27
+        versionName = "0.15.0"
         buildConfigField("String", "MOMOX_API_TOKEN", "\"${momoxToken.replace("\\", "\\\\").replace("\"", "\\\"")}\"")
         buildConfigField("String", "GOOGLE_BOOKS_API_KEY", "\"${googleBooksKey.replace("\\", "\\\\").replace("\"", "\\\"")}\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

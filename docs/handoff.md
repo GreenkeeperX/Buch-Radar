@@ -1,4 +1,4 @@
-# Übergabe: 0.14.0
+# Übergabe: 0.15.0
 
 ## Auftrag und Stand
 
@@ -38,9 +38,16 @@ Schließen werden nur die eigenen CameraX-Anwendungsfälle freigegeben.
 Der Bildbenchmark umfasst neun Varianten von drei Fotos; er ersetzt keinen
 Langlauf- oder allgemeinen Erkennungsnachweis.
 
-Nach 0.14.0 (Branch/PR, noch ohne Release): überarbeitete Oberfläche, abgesicherte
-Listenaktionen mit Rückgängig und ausgelagerte Listenlogik; siehe
-`implementation-status.md`. Gerätetests dafür stehen noch aus.
+0.15.0: überarbeitete Oberfläche (kompakte Momox-Zeile, Filterchips, Scan-Knopf,
+Detailmenü, Querformat), Rückgängig für Entfernen und Verkauft (auch für mehrere
+schnelle Aktionen), einzelne Regal-Funde verwerfen, Enter startet die Suche.
+Erkennung: tolerantere ISBN-Lesung (Trenner, Barcode-Klarschriftzeile), Scanner
+löst bei leichtem Flackern aus, hochauflösendes Regal-Foto, Buchkanten nach
+Zeilenanteil (eigene Regalfotos: 8/32 statt 2/32 sauber gelesene Rücken bei 1920 px),
+Kandidatenauswahl, wenn nur ein Autor erkannt wird. Katalog: Pause nach HTTP 429,
+optionaler eigener Google-Books-Schlüssel nur für private Builds. Zwei Runden
+Codex-Gesamtprüfung; Befunde behoben. Details und Grenzen in `implementation-status.md`
+und `tools/recognition/README.md`. Regalerkennung bleibt deutlich verbesserungsbedürftig.
 
 ## Nächste konkrete Arbeit
 
@@ -58,7 +65,7 @@ Momox-Vereinbarung keine Verfügbarkeit einer offiziellen Schnittstelle versprec
 
 ## Lokale und öffentliche Builds
 
-VersionName `0.14.0`, versionCode `26`, applicationId `de.buchradar.app`.
+VersionName `0.15.0`, versionCode `27`, applicationId `de.buchradar.app`.
 Die öffentliche Test-APK ist debug-signiert und ohne vorkonfigurierten Momox-Zugang.
 Ein lokal eingerichteter Build kann andere Zugangskonfiguration enthalten; niemals
 seine APK ungeprüft veröffentlichen. Quellcode und Lizenz sind identisch.
@@ -70,7 +77,7 @@ kein unangekündigtes Force-Push. Das Quellcode-ZIP enthält keine Git-Historie.
 
 ## Weiterarbeit mit Claude
 
-Repository klonen oder das Release-Archiv `Buecher-Radar-0.14.0-Claude.zip` entpacken.
+Repository klonen oder das Release-Archiv `Buecher-Radar-0.15.0-Claude.zip` entpacken.
 Claude Code im Projektordner starten; `CLAUDE.md` ist der Einstieg.
 Für eine Unterhaltung ohne Repositoryzugriff das ZIP bereitstellen, sofern die
 verwendete Oberfläche Archive unterstützt. Verfügbare Werkzeuge und Android-SDK

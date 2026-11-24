@@ -156,7 +156,7 @@ nach Messung an freigegebenen Scanbeispielen als bestätigt.
 - Langlauf, Drehung während laufender OCR und allgemeine Erkennungsqualität bleiben
   weitere Abnahmen.
 
-## Oberfläche und Listenaktionen (nach 0.14.0, unveröffentlicht)
+## Oberfläche und Listenaktionen (0.15.0)
 - Eigenes Farbschema hell/dunkel aus den Farben des App-Symbols, semantische
   Statusfarben (`ui/Theme.kt`), Material-Icons statt Textzeichen, Fenster-Theme
   ohne weißes Aufblitzen beim Start im Dunkelmodus.
@@ -180,7 +180,7 @@ nach Messung an freigegebenen Scanbeispielen als bestätigt.
 - Offen: Großschrift/TalkBack-Abnahme, Rückgängig nach Drehen am Gerät,
   weitere Aufteilung von `MainActivity` (Regal- und Trefferansicht).
 
-## Erkennung (nach 0.14.0, unveröffentlicht)
+## Erkennung (0.15.0)
 - ISBN aus Text: bis zu zwei Trenner zwischen Ziffern (OCR liest „-“ als „.“) und
   Klarschriftzeile unter dem Barcode mit typischen Fehllesungen; nur 978/979 mit
   gültiger Prüfziffer. Pixel 9a, 3 öffentliche ISBN-Fotos: vorher 14/18 Fälle,
