@@ -33,6 +33,12 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.exclude
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -103,6 +109,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.toArgb
@@ -176,6 +183,9 @@ class MainActivity : ComponentActivity() {
                 // From 130 % system font the list gets the same space-saving layout as landscape.
                 val largeFont = LocalConfiguration.current.fontScale >= 1.3f
                 var filterMenuOpen by remember { mutableStateOf(false) }
+                // While typing (field focused and keyboard shown), the navigation steps aside so the bottom
+                // search sits right above the keyboard; it returns as soon as the keyboard closes.
+                var searchFocused by remember { mutableStateOf(false) }
                 val session: BookSessionViewModel = viewModel()
                 val scope = session.viewModelScope
                 val uiScope = rememberCoroutineScope()
@@ -527,7 +537,7 @@ class MainActivity : ComponentActivity() {
                                     Text(if (showSoldBooks) "Zurück in Meine Bücher (${selectedVisibleIds.size})" else "Als verkauft markieren (${selectedVisibleIds.size})")
                                 }
                             }
-                        } else if (onListScreen) NavigationBar(containerColor = colorScheme.surfaceContainer) {
+                        } else if (onListScreen && !(searchFocused && WindowInsets.isImeVisible)) NavigationBar(containerColor = colorScheme.surfaceContainer) {
                             NavigationBarItem(
                                 selected = !showSoldBooks,
                                 onClick = { showSoldBooks = false; exitSelection() },
@@ -756,48 +766,7 @@ class MainActivity : ComponentActivity() {
                         // In landscape and with large fonts the fixed area may take at most 40 % of the height and scrolls itself.
                         Column(Modifier.then(if (landscape || largeFont) Modifier.heightIn(max = (LocalConfiguration.current.screenHeightDp * .4f).dp).verticalScroll(rememberScrollState()) else Modifier)
                             .padding(horizontal = 16.dp).padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            if (!selectionMode) OutlinedTextField(
-                                    value = searchInput,
-                                    onValueChange = { searchInput = it; coverFrame = null; visualCoverTest = false },
-                                    placeholder = { Text(if (showSoldBooks) "Verkaufte durchsuchen" else "ISBN oder Titel", maxLines = 1) },
-                                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                                    textStyle = MaterialTheme.typography.bodyLarge,
-                                    trailingIcon = if (searchInput.isNotEmpty()) {
-                                        { IconButton(onClick = { searchInput = ""; coverFrame = null; message = null }) { Icon(Icons.Filled.Clear, contentDescription = "Eingabe löschen") } }
-                                    } else null,
-                                    shape = RoundedCornerShape(28.dp),
-                                    // Enter on a hardware keyboard searches instead of adding a line break;
-                                    // the field stays multi-line to show recognised text.
-                                    modifier = Modifier.fillMaxWidth().onPreviewKeyEvent { event ->
-                                        if (event.key == Key.Enter || event.key == Key.NumPadEnter) {
-                                            if (event.type == KeyEventType.KeyUp) {
-                                                if (showSoldBooks) keyboard?.hide() else if (searchInput.isNotBlank()) submitInput(searchInput, coverFrame)
-                                            }
-                                            true
-                                        } else false
-                                    },
-                                    enabled = !isSearching,
-                                    maxLines = 3,
-                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                                    keyboardActions = KeyboardActions(onSearch = { if (showSoldBooks) keyboard?.hide() else if (searchInput.isNotBlank()) submitInput(searchInput, coverFrame) })
-                                )
                             if (!showSoldBooks && !selectionMode) {
-                                val inputIsIsbn = BookInputFormat.parseIsbn(searchInput) != null
-                                if (searchInput.isNotBlank()) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    run {
-                                        Button(onClick = { submitInput(searchInput, coverFrame) }, enabled = !isSearching, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
-                                            Icon(if (inputIsIsbn) Icons.Filled.Add else Icons.Filled.Search, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
-                                            Text(when { isSearching -> "Suche …"; inputIsIsbn -> "ISBN hinzufügen"; searchInput.any(Char::isLetter) -> "Im Katalog suchen"; else -> "ISBN hinzufügen" },
-                                                style = MaterialTheme.typography.titleMedium)
-                                        }
-                                        OutlinedButton(onClick = { openScanner(ScannerMode.AUTOMATIC) }, enabled = !isSearching, modifier = Modifier.heightIn(min = 52.dp)) {
-                                            Icon(painterResource(R.drawable.ic_camera), contentDescription = "Kamera öffnen")
-                                        }
-                                    }
-                                }
-                                if (searchInput.any(Char::isLetter) && !isSearching) TextButton(onClick = { manualEntry = BookEntity("", searchInput) }) {
-                                    Icon(Icons.Filled.Edit, null, Modifier.padding(end = 6.dp)); Text("Buch manuell erfassen")
-                                }
                                 if (shelfState.groups.isNotEmpty() || shelfError != null) Surface(
                                     color = colorScheme.surfaceContainerHigh, contentColor = colorScheme.onSurface,
                                     shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()
@@ -812,7 +781,6 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
                             }
-                            message?.let { InfoBanner(it, onDismiss = { message = null }) }
                         }
                         LazyColumn(
                             state = bookListState,
@@ -854,6 +822,7 @@ class MainActivity : ComponentActivity() {
                                             val current = BookListQuery.filters.firstOrNull { it.first == statusFilter } ?: BookListQuery.filters.first()
                                             OutlinedButton(onClick = { filterMenuOpen = true }, modifier = Modifier.heightIn(min = 48.dp),
                                                 contentPadding = PaddingValues(start = 14.dp, end = 8.dp)) {
+                                                Icon(painterResource(R.drawable.ic_filter), contentDescription = null, modifier = Modifier.size(18.dp).padding(end = 2.dp))
                                                 Text("${current.second} ${books.count { BookListQuery.matchesStatus(it, current.first) }}", maxLines = 1)
                                                 Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
                                             }
@@ -892,7 +861,7 @@ class MainActivity : ComponentActivity() {
                                     },
                                     text = when {
                                         showSoldBooks && noBooksYet -> "Halte ein Buch in „Meine Bücher“ gedrückt, um es als verkauft zu markieren."
-                                        noBooksYet -> "Tippe unten auf „Scannen“ oder gib oben eine ISBN oder einen Titel ein."
+                                        noBooksYet -> "Tippe unten auf „Scannen“ oder gib unten eine ISBN oder einen Titel ein."
                                         else -> "Kein Buch entspricht der Suche oder dem Filter."
                                     },
                                     action = when {
@@ -922,6 +891,58 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                         }
+                        // Search sits at the bottom, above the navigation and in thumb reach; it stays put
+                        // while the list scrolls. Results and actions for the entered text appear above it.
+                        // Edge-to-edge windows are not resized for the keyboard: lift the search area by the
+                        // keyboard height minus the navigation bar, which the scaffold padding already covers.
+                        Column(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.ime.exclude(WindowInsets.navigationBars))
+                            .padding(horizontal = 16.dp).padding(top = 4.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            message?.let { InfoBanner(it, onDismiss = { message = null }) }
+                            if (!showSoldBooks && !selectionMode) {
+                                val inputIsIsbn = BookInputFormat.parseIsbn(searchInput) != null
+                                if (searchInput.isNotBlank()) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    run {
+                                        Button(onClick = { submitInput(searchInput, coverFrame) }, enabled = !isSearching, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
+                                            Icon(if (inputIsIsbn) Icons.Filled.Add else Icons.Filled.Search, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
+                                            Text(when { isSearching -> "Suche …"; inputIsIsbn -> "ISBN hinzufügen"; searchInput.any(Char::isLetter) -> "Im Katalog suchen"; else -> "ISBN hinzufügen" },
+                                                style = MaterialTheme.typography.titleMedium)
+                                        }
+                                        OutlinedButton(onClick = { openScanner(ScannerMode.AUTOMATIC) }, enabled = !isSearching, modifier = Modifier.heightIn(min = 52.dp)) {
+                                            Icon(painterResource(R.drawable.ic_camera), contentDescription = "Kamera öffnen")
+                                        }
+                                    }
+                                }
+                                if (searchInput.any(Char::isLetter) && !isSearching) TextButton(onClick = { manualEntry = BookEntity("", searchInput) }) {
+                                    Icon(Icons.Filled.Edit, null, Modifier.padding(end = 6.dp)); Text("Buch manuell erfassen")
+                                }
+                            }
+                            if (!selectionMode) OutlinedTextField(
+                                    value = searchInput,
+                                    onValueChange = { searchInput = it; coverFrame = null; visualCoverTest = false },
+                                    placeholder = { Text(if (showSoldBooks) "Verkaufte durchsuchen" else "ISBN oder Titel", maxLines = 1) },
+                                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                                    textStyle = MaterialTheme.typography.bodyLarge,
+                                    trailingIcon = if (searchInput.isNotEmpty()) {
+                                        { IconButton(onClick = { searchInput = ""; coverFrame = null; message = null }) { Icon(Icons.Filled.Clear, contentDescription = "Eingabe löschen") } }
+                                    } else null,
+                                    shape = RoundedCornerShape(28.dp),
+                                    // Enter on a hardware keyboard searches instead of adding a line break;
+                                    // the field stays multi-line to show recognised text.
+                                    modifier = Modifier.fillMaxWidth().onFocusChanged { searchFocused = it.isFocused }.onPreviewKeyEvent { event ->
+                                        if (event.key == Key.Enter || event.key == Key.NumPadEnter) {
+                                            if (event.type == KeyEventType.KeyUp) {
+                                                if (showSoldBooks) keyboard?.hide() else if (searchInput.isNotBlank()) submitInput(searchInput, coverFrame)
+                                            }
+                                            true
+                                        } else false
+                                    },
+                                    enabled = !isSearching,
+                                    maxLines = 3,
+                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                    keyboardActions = KeyboardActions(onSearch = { if (showSoldBooks) keyboard?.hide() else if (searchInput.isNotBlank()) submitInput(searchInput, coverFrame) })
+                                )
+                        }
+
                     }
                 }
 
