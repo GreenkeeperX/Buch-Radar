@@ -12,6 +12,8 @@ val localSettings = Properties().apply {
 val momoxToken = providers.environmentVariable("MOMOX_API_TOKEN").orNull ?: localSettings.getProperty("momox.apiToken", "")
 // Private builds only; public release APKs are built with an empty key like the Momox token.
 val googleBooksKey = providers.environmentVariable("GOOGLE_BOOKS_API_KEY").orNull ?: localSettings.getProperty("googleBooks.apiKey", "")
+if (momoxToken.isNotBlank() || googleBooksKey.isNotBlank())
+    logger.lifecycle("Hinweis: Dieser Build enthält private Zugangswerte (Momox/Google Books). Die APK nicht weitergeben oder veröffentlichen.")
 
 android {
     namespace = "de.buchradar.app"

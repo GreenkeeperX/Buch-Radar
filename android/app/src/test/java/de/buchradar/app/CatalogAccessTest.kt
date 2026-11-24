@@ -5,6 +5,7 @@ import de.buchradar.app.network.CatalogUnavailable
 import kotlinx.coroutines.*
 import org.junit.Assert.*
 import org.junit.Test
+import okhttp3.ResponseBody.Companion.toResponseBody
 import java.util.UUID
 
 class CatalogAccessTest {
@@ -81,5 +82,29 @@ class CatalogAccessTest {
         }
         assertEquals("Treffer", result.value)
         assertEquals(listOf("Nur der Autor wurde erkannt."), result.warnings)
+    }
+
+    @Test fun searchesWaitingAtTheGateSkipASourceThatJustHitItsLimit() = runBlocking {
+        val provider = source()
+        val firstStarted = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        var secondCalls = 0
+        val first = async {
+            runCatching {
+                CatalogAccess.report {
+                    CatalogAccess.fetch<String>(provider, "a") {
+                        firstStarted.complete(Unit); release.await()
+                        throw retrofit2.HttpException(retrofit2.Response.error<Any>(429, "".toResponseBody(null)))
+                    }
+                }
+            }
+        }
+        firstStarted.await()
+        val second = async { runCatching { CatalogAccess.report { CatalogAccess.fetch(provider, "b") { secondCalls++; "Treffer" } } } }
+        delay(100)
+        release.complete(Unit)
+        assertTrue(first.await().exceptionOrNull() is CatalogUnavailable)
+        assertTrue(second.await().exceptionOrNull() is CatalogUnavailable)
+        assertEquals(0, secondCalls)
     }
 }

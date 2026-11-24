@@ -198,6 +198,15 @@ nach Messung an freigegebenen Scanbeispielen als bestätigt.
   zeigt zuerst verschiedene Titel, dann weitere Ausgaben, ohne Trefferbewertung, und
   weist mit einem Hinweis auf die nötige Auswahl hin. Kein automatisches Raten.
   Grundlage sind JVM-Tests der Erkennungsregel; Wirkung am Gerät noch nicht gemessen.
+- Codex-Prüfung, Runde 2 (offene Befunde): Rückgängig sammelt mehrere schnelle Lösch-/
+  Verkauft-Aktionen statt nur die letzte zu behalten und läuft nicht ab, solange Details oder
+  Einstellungen die Liste verdecken. Ein während der Momox-Anfrage verkauftes oder ersetztes
+  Buch pausiert die Warteschlange nicht mehr. Nach HTTP 429 prüfen am Quellen-Tor wartende
+  parallele Suchen die Sperre erneut. Regal-Foto nur bei gleichem Bildinhalt wie das
+  analysierte Bild (Abweichung wird protokolliert), sonst Analysebild. Manuelles „Jetzt
+  suchen“ gilt nur für den angezeigten Text; bei verändertem Bild fragt der Scanner erneut.
+  Rücken mit nur einer ISBN bleiben im Regalpfad erhalten. Builds mit privaten Zugangswerten
+  geben einen Hinweis aus. Am Gerät noch nicht geprüft.
 
 ## Externe Voraussetzungen
 - Der bisherige Momox-Zugang ist nicht als öffentliche Schnittstelle zugesichert.

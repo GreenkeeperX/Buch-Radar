@@ -238,9 +238,13 @@ class MainActivity : ComponentActivity() {
                     else cameraPermissionRequest.launch(Manifest.permission.CAMERA)
                 }
                 // Pending undo lives in the ViewModel, so a rotation keeps both the data and the action.
+                // The snackbar host belongs to the list screen: while details or settings cover it, the
+                // undo waits instead of timing out unseen, and the 12 s start again once the list is back.
                 val pendingUndo = session.pendingUndo.value
-                LaunchedEffect(pendingUndo) {
+                val undoHostVisible = !settingsOpen && detailsBook == null
+                LaunchedEffect(pendingUndo, undoHostVisible) {
                     val undo = pendingUndo ?: return@LaunchedEffect
+                    if (!undoHostVisible) return@LaunchedEffect
                     snackbar.currentSnackbarData?.dismiss()
                     // Undo is the only way back for a removed book: keep it 12 s, longer than the
                     // short default some accessibility settings impose on "Long".
@@ -250,9 +254,9 @@ class MainActivity : ComponentActivity() {
                     if (session.pendingUndo.value === undo) session.pendingUndo.value = null
                     if (result == SnackbarResult.ActionPerformed) scope.launch {
                         val outcome = catchingOperation {
-                            undo.deleted?.let { book ->
-                                if (dao.insert(book) == -1L) message = "Nicht wiederhergestellt: Diese ISBN ist inzwischen wieder in der Liste."
-                            }
+                            val skipped = undo.deleted.count { book -> dao.insert(book) == -1L }
+                            if (skipped > 0) message = if (skipped == 1) "Nicht wiederhergestellt: Diese ISBN ist inzwischen wieder in der Liste."
+                                else "$skipped Bücher nicht wiederhergestellt: Ihre ISBN ist inzwischen wieder in der Liste."
                             if (undo.soldIds.isNotEmpty()) dao.updateSoldStatus(undo.soldIds, null)
                         }
                         if (outcome.isFailure) message = "Rückgängig machen fehlgeschlagen."
@@ -353,7 +357,10 @@ class MainActivity : ComponentActivity() {
                     scope.launch {
                         val marked = catchingOperation { dao.updateSoldStatus(ids, System.currentTimeMillis()) }
                         if (marked.isFailure) message = "Markieren fehlgeschlagen. Bitte erneut versuchen."
-                        else session.pendingUndo.value = PendingUndo(if (ids.size == 1) "Als verkauft markiert" else "${ids.size} Bücher als verkauft markiert", soldIds = ids)
+                        else {
+                            val undo = PendingUndo(if (ids.size == 1) "Als verkauft markiert" else "${ids.size} Bücher als verkauft markiert", soldIds = ids)
+                            session.pendingUndo.value = session.pendingUndo.value?.plus(undo) ?: undo
+                        }
                     }
                 }
                 val deleteBook: (BookEntity) -> Unit = { book ->
@@ -365,7 +372,10 @@ class MainActivity : ComponentActivity() {
                             deleted.isFailure -> message = "Entfernen fehlgeschlagen. Bitte erneut versuchen."
                             row == null -> message = "Dieses Buch war bereits entfernt."
                             // The check history stays keyed by ISBN, so undo restores the full book.
-                            else -> session.pendingUndo.value = PendingUndo(row.title?.let { "„$it“ entfernt" } ?: "Buch entfernt", deleted = row)
+                            else -> {
+                                val undo = PendingUndo(row.title?.let { "„$it“ entfernt" } ?: "Buch entfernt", deleted = listOf(row))
+                                session.pendingUndo.value = session.pendingUndo.value?.plus(undo) ?: undo
+                            }
                         }
                     }
                 }

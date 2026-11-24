@@ -70,7 +70,10 @@ object MomoxCheckCoordinator {
             val failure = error as? MomoxCheckException
             if (error != null && failure?.pauseQueue == true) {
                 val current = db.withTransaction {
-                    val stillQueued = dao.pendingFor(item.isbn)?.requestId == item.requestId
+                    // A book sold or replaced during the request no longer decides about the queue;
+                    // the next loop pass finishes its task and the following book reports the error itself.
+                    val stillQueued = dao.pendingFor(item.isbn)?.requestId == item.requestId &&
+                        dao.findByIsbn(item.isbn)?.let { it.createdAt == item.bookCreatedAt && it.soldAt == null } == true
                     if (stillQueued) {
                         dao.getRun()?.takeIf { it.finishedAt == null }?.let {
                             dao.saveRun(it.copy(pausedReason = error.message ?: "Zugriff prüfen"))

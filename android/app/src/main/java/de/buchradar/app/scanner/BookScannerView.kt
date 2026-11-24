@@ -78,8 +78,10 @@ fun BookScannerView(
     var hint by remember { mutableStateOf("Buch ins Bild halten") }
     val delivered = remember { AtomicBoolean(false) }
     val manualRequested = remember { AtomicBoolean(false) }
+    // The text shown when the button was tapped: a later frame may only be used if it still shows it.
+    val manualKey = remember { java.util.concurrent.atomic.AtomicReference("") }
     var finalizing by remember { mutableStateOf(false) }
-    val confirm: () -> Unit = { manualRequested.set(true) }
+    val confirm: () -> Unit = { manualKey.set(foldOcr(observed)); manualRequested.set(true) }
     Box(modifier.fillMaxSize().background(Color.Black)) {
         AndroidView(factory = { preview }, modifier = Modifier.fillMaxSize())
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(12.dp), verticalArrangement = Arrangement.SpaceBetween) {
@@ -128,6 +130,7 @@ fun BookScannerView(
         var publishKey = ""
         var publishCount = 0
         var rotatedPieces = emptyList<OcrPiece>()
+        var tapMismatchAt = -10_000L
         val stability = RecognitionStability()
         try {
             val future = ProcessCameraProvider.getInstance(context)
@@ -226,6 +229,7 @@ fun BookScannerView(
                                 if (lastAt - lastTextAt > 2_000) { observed = ""; spines = emptyList() }
                             }
                             hint = when {
+                                lastAt - tapMismatchAt < 2_500 -> "Bild hat sich verändert – bitte erneut tippen"
                                 text.isBlank() -> "Näher heran – noch kein lesbarer Text"
                                 edges <= 2.0 -> "Text noch unscharf – bitte neu ausrichten"
                                 !steady -> "Noch ruhig halten"
@@ -234,7 +238,15 @@ fun BookScannerView(
                                 else -> "Text erkannt – Suche startet bei ruhigem Bild"
                             }
                         }
-                        if (text.isNotBlank() && (ready || manualRequested.get()) && delivered.compareAndSet(false, true)) {
+                        // A tap confirms the text on screen; if the camera moved on since, ask again instead of
+                        // searching for text the user never saw.
+                        val manualMatches = manualRequested.get() && wordOverlap(currentKey, manualKey.get()) >= if (isShelf) .5f else .6f
+                        if (manualRequested.get() && !manualMatches && !ready) {
+                            manualRequested.set(false)
+                            tapMismatchAt = lastAt
+                            withContext(Dispatchers.Main) { hint = "Bild hat sich verändert – bitte erneut tippen" }
+                        }
+                        if (text.isNotBlank() && (ready || manualMatches) && delivered.compareAndSet(false, true)) {
                             manualRequested.set(false)
                             withContext(Dispatchers.Main) { finalizing = true; if (isShelf) hint = "Buchrücken werden getrennt gelesen – einen Moment …" }
                             val separated = if (isShelf) readShelfWithStill(context, capture, image, pieces, recognizer) else null
@@ -306,11 +318,16 @@ fun BookScannerView(
 private suspend fun readShelfWithStill(context: android.content.Context, capture: ImageCapture?, frame: Bitmap,
     pieces: List<OcrPiece>, recognizer: com.google.mlkit.vision.text.TextRecognizer): ShelfImageResult? {
     val still = capture?.let { captureStill(context, it, maxSide = 2560) }
-    if (still == null || still.width <= frame.width ||
-        abs(still.width.toFloat() / still.height - frame.width.toFloat() / frame.height) > .02f * frame.width / frame.height) {
+    // Same framing is not enough: the picture is taken after the analysed frame, so the camera may
+    // have moved. Only use it when its content still matches the frame the text positions come from.
+    val sameScene = still != null && still.width > frame.width &&
+        abs(still.width.toFloat() / still.height - frame.width.toFloat() / frame.height) <= .02f * frame.width / frame.height &&
+        frameDifference(imageSample(frame), imageSample(still)).also { AppLog.add(context, "Regal: Foto-Abweichung ${it.toInt()}") } < STILL_MATCH_DIFFERENCE
+    if (!sameScene) {
         still?.recycle()
         return readShelfRegions(frame, recognizer, protectedPieces = pieces)
     }
+    still!!
     return try {
         val f = still.width.toFloat() / frame.width
         AppLog.add(context, "Regal: Foto ${still.width}×${still.height} statt ${frame.width}×${frame.height}")
@@ -357,6 +374,8 @@ private suspend fun captureStill(context: android.content.Context, capture: Imag
  * for a hand-held phone (and for screens, which flicker); 12 still rejects real movement.
  */
 private const val STEADY_DIFFERENCE = 12
+/** Still picture and analysis frame differ in exposure and processing, so allow twice the steady motion. */
+private const val STILL_MATCH_DIFFERENCE = 24
 
 /**
  * Mean per-sample change after removing the overall brightness shift, so exposure changes and

@@ -20,16 +20,15 @@ App und Testpaket aus demselben Commit bauen/installieren
 (`./gradlew installDeviceTest installDeviceTestAndroidTest`). Getestet wird die
 eigene App `de.buchradar.app.devicetest`, nie die installierte Bücher-Radar-App.
 Ein lokaler Ordner `cache/recognition-benchmark` dieser App enthält Manifest und Bilder
-(alle Bilddateien aus dem Manifest kopieren). Keine
+(alle Bilddateien aus dem Manifest kopieren, auch die ISBN-Fotos). Keine
 echten Datenbanken ersetzen oder die App-Daten löschen. Beispielsweise:
 
 ```sh
 adb push /tmp/buchradar-public-fixtures /data/local/tmp/buchradar-public-fixtures
 adb shell run-as de.buchradar.app.devicetest mkdir -p cache/recognition-benchmark
-adb shell run-as de.buchradar.app.devicetest cp /data/local/tmp/buchradar-public-fixtures/manifest.json cache/recognition-benchmark/
-adb shell run-as de.buchradar.app.devicetest cp /data/local/tmp/buchradar-public-fixtures/fontane-stechlin.jpg cache/recognition-benchmark/
-adb shell run-as de.buchradar.app.devicetest cp /data/local/tmp/buchradar-public-fixtures/fontane-kinderjahre.jpg cache/recognition-benchmark/
-adb shell run-as de.buchradar.app.devicetest cp /data/local/tmp/buchradar-public-fixtures/shelf-mixed-german.jpg cache/recognition-benchmark/
+for f in /tmp/buchradar-public-fixtures/manifest.json /tmp/buchradar-public-fixtures/*.jpg; do
+  adb shell run-as de.buchradar.app.devicetest cp "/data/local/tmp/buchradar-public-fixtures/$(basename "$f")" cache/recognition-benchmark/
+done
 adb shell am instrument -w -e class de.buchradar.app.RecognitionBenchmarkTest -e recognitionBenchmark true de.buchradar.app.devicetest.test/androidx.test.runner.AndroidJUnitRunner
 adb exec-out run-as de.buchradar.app.devicetest cat cache/recognition-benchmark/report.json > /tmp/recognition-report.json
 ```

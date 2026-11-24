@@ -12,6 +12,7 @@ import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.coroutineContext
 
 class CatalogUnavailable(message: String) : Exception(message)
+private class SourcePaused : Exception("Anfragelimit")
 
 internal data class CatalogResult<T>(val value: T, val warnings: List<String>)
 
@@ -76,15 +77,16 @@ internal object CatalogAccess {
             trace?.successful = (trace?.successful ?: 0) + 1
             return it.value as T
         }
-        if (synchronized(blockedUntil) { (blockedUntil[source] ?: 0) > System.currentTimeMillis() }) {
-            trace?.limited?.add(source); return null
-        }
+        fun paused() = synchronized(blockedUntil) { (blockedUntil[source] ?: 0) > System.currentTimeMillis() }
+        if (paused()) { trace?.limited?.add(source); return null }
         val gate = synchronized(gates) { gates.getOrPut(source) { Mutex() } }
         val remaining = trace?.remaining() ?: 12_000
         if (remaining <= 0) { trace?.budgetExhausted = true; return null }
         val result = catchingOperation {
             withTimeoutOrNull(minOf(12_000, remaining)) {
                 gate.withLock {
+                    // Parallel searches queue at the gate; one of them may have hit the limit meanwhile.
+                    if (paused()) throw SourcePaused()
                     val wait = synchronized(lastRequest) { 1_100 - (System.nanoTime() / 1_000_000 - (lastRequest[source] ?: 0)) }
                     if (wait > 0) delay(wait)
                     synchronized(lastRequest) { lastRequest[source] = System.nanoTime() / 1_000_000 }
@@ -101,6 +103,7 @@ internal object CatalogAccess {
             trace?.successful = (trace?.successful ?: 0) + 1
             synchronized(cache) { cache[cacheKey] = Cached(System.currentTimeMillis(), it) }
         } ?: run {
+            if (result.exceptionOrNull() is SourcePaused) { trace?.limited?.add(source); return null }
             val code = (result.exceptionOrNull() as? retrofit2.HttpException)?.code()
             // Only the source and status are logged, never the query.
             code?.let { android.util.Log.i("BuchRadar.Catalog", "$source: HTTP $it") }

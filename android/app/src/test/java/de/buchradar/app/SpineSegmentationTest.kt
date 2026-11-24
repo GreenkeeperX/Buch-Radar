@@ -1,6 +1,7 @@
 package de.buchradar.app
 
 import de.buchradar.app.scanner.OcrPiece
+import de.buchradar.app.scanner.readableSpine
 import de.buchradar.app.scanner.spineBand
 import de.buchradar.app.scanner.spineEdges
 import org.junit.Assert.*
@@ -73,5 +74,11 @@ class SpineSegmentationTest {
     @Test fun bandFallsBackWithoutVerticalLettering() {
         assertEquals(.23f to .88f, spineBand(emptyList(), 400))
         assertEquals(.23f to .88f, spineBand(listOf(OcrPiece("Titel", 0f, 10f, 100f, 30f, 0f)), 400))
+    }
+
+    @Test fun spineWithOnlyAnIsbnIsKept() {
+        assertTrue(readableSpine("978-3-12-517154-1"))
+        assertTrue(readableSpine("Der Orientalist"))
+        assertFalse(readableSpine("12 34"))
     }
 }

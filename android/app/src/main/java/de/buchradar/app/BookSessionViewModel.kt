@@ -54,5 +54,16 @@ class BookSessionViewModel(application: Application) : AndroidViewModel(applicat
     val momoxCheckMode = mutableStateOf("stale")
 }
 
-/** An action the snackbar can still undo: a removed book row or books marked as sold. */
-class PendingUndo(val text: String, val deleted: BookEntity? = null, val soldIds: List<String> = emptyList())
+/** Actions the snackbar can still undo: removed book rows and books marked as sold. */
+class PendingUndo(val text: String, val deleted: List<BookEntity> = emptyList(), val soldIds: List<String> = emptyList()) {
+    /** A further action while an earlier one can still be undone joins it, so the earlier action keeps its undo. */
+    operator fun plus(next: PendingUndo): PendingUndo {
+        val rows = (deleted + next.deleted).distinctBy { it.id }
+        val sold = (soldIds + next.soldIds).distinct()
+        val text = listOfNotNull(
+            rows.size.takeIf { it > 0 }?.let { if (it == 1) "1 Buch entfernt" else "$it Bücher entfernt" },
+            sold.size.takeIf { it > 0 }?.let { if (it == 1) "1 als verkauft markiert" else "$it als verkauft markiert" }
+        ).joinToString(", ")
+        return PendingUndo(text, rows, sold)
+    }
+}
