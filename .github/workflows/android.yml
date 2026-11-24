@@ -6,6 +6,12 @@ on:
 permissions:
   contents: read
 jobs:
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject access values, keys and local paths
+        run: sh tools/check-secrets.sh
   verify:
     runs-on: ubuntu-latest
     steps:
@@ -18,8 +24,6 @@ jobs:
       - name: Unit tests, lint and debug build
         working-directory: android
         run: ./gradlew testDebugUnitTest lintDebug assembleDebug
-      - name: Reject hardcoded access headers
-        run: '! git grep -nE "X-API-TOKEN: [a-zA-Z0-9]{12,}" -- "*.kt"'
   backend-contract:
     runs-on: ubuntu-latest
     steps:
