@@ -1,5 +1,9 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package de.buchradar.app
 
+import de.buchradar.app.ui.ActionButtonHeight
+import de.buchradar.app.ui.ImportantButtonHeight
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -16,9 +20,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import de.buchradar.app.data.BookEntity
 import de.buchradar.app.data.BuchRadarDatabase
@@ -86,12 +92,16 @@ fun BookDetailsScreen(
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text(book.title ?: "Unbekannter Titel", style = MaterialTheme.typography.headlineSmall)
                             book.author?.let { Text(it, style = MaterialTheme.typography.titleMedium, color = scheme.onSurfaceVariant) }
-                            Text(if (book.isbn.isBlank()) "Keine ISBN – manuell erfasst" else BookInputFormat.screenIsbn(book.isbn), style = MaterialTheme.typography.bodyLarge)
+                            if (book.isbn.isBlank()) Text("Keine ISBN – manuell erfasst", style = MaterialTheme.typography.bodyLarge)
                             book.publicationYear?.let { Text("Erscheinungsjahr $it", style = MaterialTheme.typography.bodyMedium) }
                             MomoxStatusPill(book)
                             book.lastCheckedAt?.let { Text("Stand ${formatDateTime(it)}", style = MaterialTheme.typography.labelLarge, color = scheme.onSurfaceVariant) }
                         }
                     }
+                }
+                if (book.isbn.isNotBlank()) item {
+                    Text(BookInputFormat.screenIsbn(book.isbn), modifier = Modifier.fillMaxWidth(),
+                        style = MaterialTheme.typography.bodyLarge, softWrap = false, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 if (book.isbn.isNotBlank() && book.momoxStatus == "UNKNOWN" && book.lastCheckedAt != null && book.lastAttemptStatus != "ERROR") item {
                     InfoBanner("Momox kann diese ISBN keinem Artikel zuordnen. Prüfe, ob ISBN und Ausgabe stimmen; sonst kauft Momox dieses Buch nicht an.")
@@ -100,18 +110,21 @@ fun BookDetailsScreen(
                     InfoBanner("Letzte Prüfung fehlgeschlagen" + (book.lastError?.let { ": $it" } ?: "") + ". Das ältere Ergebnis bleibt erhalten.")
                 }
                 item {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // From 130 % font the two actions stack at full width; side by side their labels broke inside words.
+                    val stacked = LocalConfiguration.current.fontScale >= 1.3f
+                    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp), maxItemsInEachRow = if (stacked) 1 else 2) {
                         if (book.soldAt == null) FilledTonalButton(
                             enabled = book.isbn.isNotBlank() && !queued,
                             onClick = { scope.launch {
                                 message = if (catchingOperation { MomoxCheckCoordinator.enqueue(context, listOf(book)) }.isSuccess) "Prüfung eingereiht. Das Ergebnis erscheint hier." else "Prüfung konnte nicht gestartet werden."
                             } },
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f).heightIn(min = ImportantButtonHeight)
                         ) {
                             Icon(Icons.Filled.Refresh, null, Modifier.padding(end = 6.dp))
                             Text(if (queued) "Wird geprüft …" else "Momox prüfen")
                         }
-                        OutlinedButton(enabled = !loading && book.isbn.isNotBlank(), modifier = Modifier.weight(1f), onClick = { scope.launch {
+                        OutlinedButton(enabled = !loading && book.isbn.isNotBlank(), modifier = Modifier.weight(1f).heightIn(min = ActionButtonHeight), onClick = { scope.launch {
                             loading = true
                             val result = catchingOperation {
                                 val report = CatalogAccess.report { BookCatalog.findByIsbn(book.isbn) }

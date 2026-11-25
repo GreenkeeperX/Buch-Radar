@@ -1,5 +1,6 @@
 package de.buchradar.app.scanner
 
+import de.buchradar.app.ui.ActionButtonHeight
 import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.os.SystemClock
@@ -17,9 +18,15 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.activity.compose.BackHandler
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
@@ -43,74 +50,58 @@ import de.buchradar.app.AppLog
 import de.buchradar.app.domain.BookIdentity
 import kotlinx.coroutines.*
 import java.util.concurrent.Executors
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.coroutines.suspendCoroutine
 import kotlin.math.abs
-
-enum class ScannerMode { AUTOMATIC, SINGLE_BOOK, SHELF, COVER_TEST }
 
 @Composable
 @androidx.annotation.OptIn(androidx.camera.core.ExperimentalGetImage::class)
 @OptIn(ExperimentalCoroutinesApi::class)
 fun BookScannerView(
     onBarcode: (String) -> Unit,
-    onTextConfirmed: (String, Bitmap, Boolean) -> Unit,
-    onShelfConfirmed: (List<String>, Bitmap, String?) -> Unit,
+    onTextConfirmed: (String) -> Unit,
+    onShelfConfirmed: (List<String>, String?) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
-    initialMode: ScannerMode = ScannerMode.AUTOMATIC
+    initialMode: ScannerMode = ScannerMode.AUTOMATIC,
+    correction: ShelfScanCorrection? = null
 ) {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
     val barcodeCallback by rememberUpdatedState(onBarcode)
     val textCallback by rememberUpdatedState(onTextConfirmed)
     val shelfCallback by rememberUpdatedState(onShelfConfirmed)
-    val preview = remember { PreviewView(context).apply { scaleType = PreviewView.ScaleType.FIT_CENTER; implementationMode = PreviewView.ImplementationMode.COMPATIBLE } }
-    var mode by remember { mutableStateOf(initialMode) }
-    val currentMode by rememberUpdatedState(mode)
-    var menu by remember { mutableStateOf(false) }
-    var observed by remember { mutableStateOf("") }
-    var spines by remember { mutableStateOf<List<String>>(emptyList()) }
-    var frame by remember { mutableStateOf<Bitmap?>(null) }
-    var shelf by remember { mutableStateOf(false) }
-    var hint by remember { mutableStateOf("Buch ins Bild halten") }
-    val delivered = remember { AtomicBoolean(false) }
-    val manualRequested = remember { AtomicBoolean(false) }
-    // The text shown when the button was tapped: a later frame may only be used if it still shows it.
-    val manualKey = remember { java.util.concurrent.atomic.AtomicReference("") }
-    var finalizing by remember { mutableStateOf(false) }
-    val confirm: () -> Unit = { manualKey.set(foldOcr(observed)); manualRequested.set(true) }
-    Box(modifier.fillMaxSize().background(Color.Black)) {
-        AndroidView(factory = { preview }, modifier = Modifier.fillMaxSize())
-        Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().padding(12.dp), verticalArrangement = Arrangement.SpaceBetween) {
-            // Compact controls: in landscape full-width bars covered much of the camera image.
-            val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
-            val chip = Modifier.background(Color.Black.copy(alpha = .7f), RoundedCornerShape(20.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                TextButton(onClick = onClose, modifier = chip) { Text("Schließen", color = Color.White) }
-                Box(chip) {
-                    TextButton(onClick = { menu = true }, enabled = !finalizing) { Text("${when(mode) { ScannerMode.AUTOMATIC -> "Auto"; ScannerMode.SINGLE_BOOK -> "Einzelbuch"; ScannerMode.SHELF -> "Regal"; ScannerMode.COVER_TEST -> "Cover-Test" }} ▾", color = Color.White) }
-                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                        ScannerMode.entries.forEach { choice -> DropdownMenuItem(text = { Text(when(choice) { ScannerMode.AUTOMATIC -> "Automatisch"; ScannerMode.SINGLE_BOOK -> "Einzelbuch"; ScannerMode.SHELF -> "Regal"; ScannerMode.COVER_TEST -> "Cover-Test (experimentell)" }) }, onClick = { mode = choice; menu = false }) }
-                    }
-                }
-            }
-            Column(Modifier.align(Alignment.CenterHorizontally).widthIn(max = 560.dp).fillMaxWidth()
-                .background(Color.Black.copy(alpha = .75f), RoundedCornerShape(16.dp)).padding(horizontal = 12.dp, vertical = if (landscape) 8.dp else 12.dp),
-                verticalArrangement = Arrangement.spacedBy(if (landscape) 4.dp else 8.dp)) {
-                Text(hint, color = Color.White, style = MaterialTheme.typography.titleMedium)
-                if (observed.isNotBlank()) Text(observed, color = Color.White, maxLines = if (landscape) 1 else 3,
-                    overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
-                Button(onClick = confirm, enabled = !finalizing && observed.isNotBlank() && frame != null, modifier = Modifier.fillMaxWidth()) {
-                    Text(if (finalizing) "Buchrücken werden gelesen …" else if (shelf) "Buchrücken jetzt lesen" else "Jetzt suchen")
-                }
-            }
-        }
+    val preview = remember { PreviewView(context).apply { scaleType = PreviewView.ScaleType.FIT_START; implementationMode = PreviewView.ImplementationMode.COMPATIBLE } }
+    var mode by rememberSaveable(initialMode, correction?.groupId) {
+        mutableStateOf(if (correction == null) initialMode else ScannerMode.SINGLE_BOOK)
     }
+    val selection = remember(correction?.groupId) { ScannerSelection(mode, correction?.groupId) }
+    val correctionCallback by rememberUpdatedState(correction?.confirm)
+    var observed by remember(selection) { mutableStateOf("") }
+    var shelf by remember(selection) { mutableStateOf(false) }
+    var hint by remember(selection) { mutableStateOf("Buch ins Bild halten") }
+    var finalizing by remember(selection) { mutableStateOf(false) }
+    val close = { selection.close(); onClose() }
+    BackHandler(onBack = close)
+    DisposableEffect(selection) { onDispose { selection.close() } }
+    ScannerLayout(
+        mode = mode, correcting = correction != null, hint = hint, observed = observed,
+        shelf = shelf, finalizing = finalizing, modifier = modifier,
+        onConfirm = { selection.current?.manualText?.set(foldOcr(observed)) },
+        onModeChange = {
+            if (selection.select(it)) {
+                mode = it
+                observed = ""
+                hint = "Buch ins Bild halten"
+                shelf = false
+                finalizing = false
+            }
+        },
+        onClose = close
+    ) { AndroidView(factory = { preview }, modifier = Modifier.fillMaxSize()) }
 
-    LaunchedEffect(preview, owner) {
+    LaunchedEffect(preview, owner, selection) {
         val executor = Executors.newSingleThreadExecutor()
         val worker = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val barcodeScanner = BarcodeScanning.getClient(BarcodeScannerOptions.Builder().setBarcodeFormats(Barcode.FORMAT_EAN_13).build())
@@ -119,14 +110,12 @@ fun BookScannerView(
         var previewUseCase: Preview? = null
         var analysis: ImageAnalysis? = null
         var capture: ImageCapture? = null
-        var latestOwned: Bitmap? = null
-        var transferredFrame: Bitmap? = null
         var previousSample: IntArray? = null
         var lastAt = 0L
         var lastTextAt = 0L
         var shelfVotes = 0
         var sampleCount = 0
-        var priorMode = currentMode
+        var priorGeneration: ScanGeneration? = null
         var publishKey = ""
         var publishCount = 0
         var rotatedPieces = emptyList<OcrPiece>()
@@ -148,7 +137,8 @@ fun BookScannerView(
                 .setResolutionSelector(ResolutionSelector.Builder().setResolutionStrategy(ResolutionStrategy(Size(1920, 1440), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER)).build()).build()
             analysis = analyzer
             analyzer.setAnalyzer(executor) { proxy ->
-                if (!worker.isActive || delivered.get() || SystemClock.elapsedRealtime() - lastAt < 400) proxy.close()
+                val frame = selection.current
+                if (!worker.isActive || frame == null || frame.delivered.get() || SystemClock.elapsedRealtime() - lastAt < 400) proxy.close()
                 else worker.launch(start = CoroutineStart.ATOMIC) {
                     var ownedFrame: Bitmap? = null
                     try {
@@ -159,10 +149,27 @@ fun BookScannerView(
                         val barcodes = barcodeScanner.process(input).awaitCompletion()
                         ensureActive()
                         val isbn = barcodes.mapNotNull { BookIdentity.canonicalIsbn(it.rawValue) }.distinct().singleOrNull()
-                        val actualMode = currentMode
-                        if (actualMode != priorMode) { stability.reset(); shelfVotes = 0; rotatedPieces = emptyList(); manualRequested.set(false); priorMode = actualMode }
-                        if (isbn != null && actualMode != ScannerMode.SHELF && actualMode != ScannerMode.COVER_TEST && delivered.compareAndSet(false, true)) {
-                            withContext(Dispatchers.Main) { barcodeCallback(isbn) }
+                        if (selection.current !== frame) return@launch
+                        val actualMode = frame.mode
+                        if (frame !== priorGeneration) {
+                            stability.reset()
+                            shelfVotes = 0
+                            rotatedPieces = emptyList()
+                            previousSample = null
+                            publishKey = ""
+                            publishCount = 0
+                            sampleCount = 0
+                            lastTextAt = 0
+                            tapMismatchAt = -10_000L
+                            priorGeneration = frame
+                        }
+                        if (isbn != null && actualMode != ScannerMode.SHELF) {
+                            withContext(Dispatchers.Main) {
+                                if (selection.current === frame && frame.delivered.compareAndSet(false, true)) {
+                                    val target = selection.correctionGroupId
+                                    if (target != null) correctionCallback?.invoke(target, isbn) else barcodeCallback(isbn)
+                                }
+                            }
                             return@launch
                         }
                         val recognized = recognizer.process(input).awaitCompletion()
@@ -217,16 +224,13 @@ fun BookScannerView(
                         sampleCount++
                         if (sampleCount % 10 == 0) AppLog.add(context, "Kamera: ${width}×$height, ${groups.size} Textregionen, Bewegung=${difference.toInt()}, Konturen=${edges.toInt()}")
                         withContext(Dispatchers.Main) {
-                            if (delivered.get()) return@withContext
+                            if (selection.current !== frame || frame.delivered.get()) return@withContext
                             if (shouldPublish || ready) {
-                                latestOwned?.recycle()
-                                latestOwned = image
-                                ownedFrame = null
-                                frame = image
                                 shelf = isShelf
-                                observed = text; spines = found; lastTextAt = lastAt
-                            } else {
-                                if (lastAt - lastTextAt > 2_000) { observed = ""; spines = emptyList() }
+                                observed = text
+                                lastTextAt = lastAt
+                            } else if (lastAt - lastTextAt > 2_000) {
+                                observed = ""
                             }
                             hint = when {
                                 lastAt - tapMismatchAt < 2_500 -> "Bild hat sich verändert – bitte erneut tippen"
@@ -234,29 +238,35 @@ fun BookScannerView(
                                 edges <= 2.0 -> "Text noch unscharf – bitte neu ausrichten"
                                 !steady -> "Noch ruhig halten"
                                 isShelf -> "${found.size} Buchrücken – ruhig halten"
-                                actualMode == ScannerMode.COVER_TEST -> "Cover-Test: Text liefert Kandidaten"
                                 else -> "Text erkannt – Suche startet bei ruhigem Bild"
                             }
                         }
                         // A tap confirms the text on screen; if the camera moved on since, ask again instead of
                         // searching for text the user never saw.
-                        val manualMatches = manualRequested.get() && wordOverlap(currentKey, manualKey.get()) >= if (isShelf) .5f else .6f
-                        if (manualRequested.get() && !manualMatches && !ready) {
-                            manualRequested.set(false)
+                        if (selection.current !== frame) return@launch
+                        val manualKey = frame.manualText.getAndSet(null)
+                        val manualMatches = manualKey != null && wordOverlap(currentKey, manualKey) >= if (isShelf) .5f else .6f
+                        if (manualKey != null && !manualMatches && !ready) {
                             tapMismatchAt = lastAt
-                            withContext(Dispatchers.Main) { hint = "Bild hat sich verändert – bitte erneut tippen" }
+                            withContext(Dispatchers.Main) {
+                                if (selection.current === frame) hint = "Bild hat sich verändert – bitte erneut tippen"
+                            }
                         }
-                        if (text.isNotBlank() && (ready || manualMatches) && delivered.compareAndSet(false, true)) {
-                            manualRequested.set(false)
-                            withContext(Dispatchers.Main) { finalizing = true; if (isShelf) hint = "Buchrücken werden getrennt gelesen – einen Moment …" }
+                        if (text.isNotBlank() && (ready || manualMatches) && frame.delivered.compareAndSet(false, true)) {
+                            val activeFrame = withContext(Dispatchers.Main) {
+                                if (selection.current !== frame) return@withContext false
+                                finalizing = true
+                                if (isShelf) hint = "Buchrücken werden getrennt gelesen – einen Moment …"
+                                true
+                            }
+                            if (!activeFrame) return@launch
                             val separated = if (isShelf) readShelfWithStill(context, capture, image, pieces, recognizer) else null
                             ensureActive()
                             withContext(Dispatchers.Main) {
-                                if (latestOwned !== image) latestOwned?.recycle()
-                                latestOwned = image
-                                ownedFrame = null
-                                transferredFrame = image
-                                if (isShelf) {
+                                if (selection.current !== frame) return@withContext
+                                val target = selection.correctionGroupId
+                                if (target != null) correctionCallback?.invoke(target, BookIdentity.unambiguousIsbn(text) ?: text)
+                                else if (isShelf) {
                                     val selected = separated?.texts?.filter(::isUsefulSpineText)?.takeIf { it.isNotEmpty() } ?: found
                                     val warning = when {
                                         separated == null -> "Buchgrenzen waren nicht eindeutig. Bitte die vorgeschlagenen Gruppen prüfen."
@@ -265,15 +275,20 @@ fun BookScannerView(
                                         else -> null
                                     }
                                     AppLog.add(context, "Regal: ${separated?.regions ?: 0} Bildregionen, ${selected.size} Texte, Zeitlimit=${separated?.exhausted ?: false}")
-                                    shelfCallback(selected, image, warning)
-                                } else textCallback(text, image, actualMode == ScannerMode.COVER_TEST)
+                                    shelfCallback(selected, warning)
+                                } else textCallback(text)
                             }
                         }
                     } catch (cancelled: CancellationException) { throw cancelled }
                     catch (error: Exception) {
                         AppLog.add(context, "Kameraanalyse fehlgeschlagen (${error.javaClass.simpleName})")
-                        delivered.set(false)
-                        withContext(Dispatchers.Main) { finalizing = false; hint = "Erkennung unterbrochen – bitte erneut ausrichten" }
+                        frame.delivered.set(false)
+                        withContext(Dispatchers.Main) {
+                            if (selection.current === frame) {
+                                finalizing = false
+                                hint = "Erkennung unterbrochen – bitte erneut ausrichten"
+                            }
+                        }
                     } finally { ownedFrame?.recycle(); proxy.close() }
                 }
             }
@@ -306,7 +321,66 @@ fun BookScannerView(
                 provider?.unbind(*listOfNotNull(previewUseCase, analysis, capture).toTypedArray())
             }
             barcodeScanner.close(); recognizer.close(); executor.shutdown()
-            if (latestOwned !== transferredFrame) latestOwned?.recycle()
+        }
+    }
+}
+
+class ShelfScanCorrection(val groupId: String, val confirm: (String, String) -> Unit)
+
+@Composable
+internal fun ScannerLayout(
+    mode: ScannerMode, correcting: Boolean, hint: String, observed: String, shelf: Boolean,
+    finalizing: Boolean, onConfirm: () -> Unit, onModeChange: (ScannerMode) -> Unit, onClose: () -> Unit,
+    modifier: Modifier = Modifier, panelModifier: Modifier = Modifier, preview: @Composable () -> Unit
+) {
+    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    BoxWithConstraints(modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).safeDrawingPadding().background(Color.Black)) {
+        val panelLimit = maxHeight * .4f
+        Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(Modifier.fillMaxWidth().weight(1f)) { preview() }
+            Box(Modifier.widthIn(max = 560.dp).fillMaxWidth().heightIn(max = panelLimit).padding(8.dp)) {
+                Surface(modifier = panelModifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surfaceContainer) {
+                    Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(if (landscape) 4.dp else 8.dp)) {
+                        Text(hint, style = MaterialTheme.typography.titleMedium, minLines = if (landscape) 1 else 2)
+                        val textLines = if (landscape) 1 else 3
+                        Text(observed, minLines = textLines, maxLines = textLines,
+                            overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
+                        Button(onClick = onConfirm, enabled = !finalizing && observed.isNotBlank(),
+                            modifier = Modifier.fillMaxWidth().heightIn(min = ActionButtonHeight),
+                            colors = ButtonDefaults.buttonColors(
+                                disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                                disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                            )) {
+                            Text(if (finalizing) "Buchrücken werden gelesen …" else if (shelf) "Buchrücken jetzt lesen" else "Jetzt suchen")
+                        }
+                        ScannerModeBar(mode, onModeChange, !finalizing && !correcting, onClose)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
+@Composable
+private fun ScannerModeBar(mode: ScannerMode, onModeChange: (ScannerMode) -> Unit, enabled: Boolean, onClose: () -> Unit) {
+    val modes = listOf(ScannerMode.AUTOMATIC to "Auto", ScannerMode.SINGLE_BOOK to "Buch", ScannerMode.SHELF to "Regal")
+    FlowRow(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        SingleChoiceSegmentedButtonRow {
+            modes.forEachIndexed { index, (choice, label) ->
+                SegmentedButton(
+                    selected = mode == choice,
+                    onClick = { onModeChange(choice) },
+                    enabled = enabled,
+                    shape = SegmentedButtonDefaults.itemShape(index, modes.size),
+                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).heightIn(min = ActionButtonHeight)
+                ) { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            }
+        }
+        IconButton(onClick = onClose, modifier = Modifier.size(48.dp)) {
+            Icon(Icons.Filled.Close, contentDescription = "Kamera schließen")
         }
     }
 }

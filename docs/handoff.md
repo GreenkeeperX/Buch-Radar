@@ -49,6 +49,15 @@ optionaler eigener Google-Books-Schlüssel nur für private Builds. Zwei Runden
 Codex-Gesamtprüfung; Befunde behoben. Details und Grenzen in `implementation-status.md`
 und `tools/recognition/README.md`. Regalerkennung bleibt deutlich verbesserungsbedürftig.
 
+Im aktuellen Arbeitsstand stehen die Suchaktionen unter dem Eingabefeld. Beim
+Tippen zeigt die Liste sofort den ersten Treffer und die Trefferzahl. Der Stand
+einer laufenden Momox-Prüfung bleibt beim Scrollen sichtbar.
+
+Die Messung des Coververgleichs ergab keinen brauchbaren Schwellenwert. Der
+Bildvergleich wurde entfernt. Katalogtreffer behalten ihre Textreihenfolge.
+`coverEvidenceAllowed` ist für eine spätere Coverprüfung vorgesehen und wird
+im Scanner derzeit nicht aufgerufen.
+
 ## Nächste konkrete Arbeit
 
 1. Die noch offenen Review-Bereiche mit Codebelegen und Abnahmekriterien abgleichen.

@@ -45,9 +45,12 @@ nach Messung an freigegebenen Scanbeispielen als bestätigt.
 3. Feldherkunft dauerhaft am Buch speichern und Budgetverteilung zwischen Quellen
    messen; Gesamtbudget und sichtbare Teilfehler/Konflikte sind ab 0.13 implementiert.
    Weitere Quellen erst nach geprüfter Schnittstelle und nachgewiesenem Nutzen.
-4. Geometrisch ausgerichteter Coververgleich und Kalibrierung der Gewichtung an
-   Referenzbildern. Ähnlichkeit nicht als sichere Identifikationswahrscheinlichkeit
-   darstellen.
+4. Einen künftigen Coververgleich für Einzelbücher an Referenzbildern prüfen.
+   Der bisherige Vergleich entfiel nach der Messung (AUC ca. 0,50–0,66, kein
+   brauchbarer Schwellenwert). Die Suche übernimmt die Textreihenfolge.
+   Die separat getestete Regel `coverEvidenceAllowed` lässt eine künftige Prüfung
+   im Buchmodus oder bei einem erkannten Einzelcover im Automatikmodus zu.
+   Regalscans und Regalkorrekturen sind ausgeschlossen.
 5. Hauptansicht weiter in eigenständige Ansichten und Aktionen aufteilen;
    Großschrift, TalkBack, Rotation und Prozesswiederherstellung automatisiert prüfen.
 6. Verkaufsvorbereitung mit Auswahl und teilbarer Liste, optionale Bestandskopien
@@ -179,6 +182,19 @@ nach Messung an freigegebenen Scanbeispielen als bestätigt.
   Regal-Bearbeitung fort, mehrzeilige Eingabe wird nie zu einer ISBN verbunden.
 - Offen: Großschrift/TalkBack-Abnahme, Rückgängig nach Drehen am Gerät,
   weitere Aufteilung von `MainActivity` (Regal- und Trefferansicht).
+
+## Überarbeitung der Listensuche (Arbeitsstand)
+- Bei Texteingabe ersetzt die Trefferzahl den Listenkopf. Eine laufende oder
+  pausierte Momox-Prüfung zeigt dort ihren Fortschritt. Beim Leeren erscheinen
+  Übersicht, Prüfaktionen, Filter und Sortierung wieder.
+- Unter dem Suchfeld stehen die Hauptaktion und die Kamera, bei Buchstaben
+  zusätzlich das Stiftsymbol für die manuelle Erfassung. Die Aktionszeile hat
+  mindestens 48 dp hohe Tippflächen und kann bei großer Schrift umbrechen.
+- Im direkten JVM-Lauf bestanden alle 83 Tests, darunter der Test der Anzeige
+  für null, einen und mehrere Treffer. Alle sechs Gerätetest-Quelldateien ließen
+  sich kompilieren. Der separate Lint-Lauf meldete drei Warnungen und keine Fehler.
+  Die Socket-Sperre der Build-Umgebung blockierte den Gradle-Prüflauf.
+  APK-Bau sowie Großschrift- und TalkBack-Prüfung der Suchzeile am Gerät stehen aus.
 
 ## Erkennung (0.15.0)
 - ISBN aus Text: bis zu zwei Trenner zwischen Ziffern (OCR liest „-“ als „.“) und

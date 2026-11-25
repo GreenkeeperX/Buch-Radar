@@ -26,20 +26,20 @@ class ScannerLifecycleTest {
         val delivered = mutableStateOf(false)
         ui.setContent {
             if (open.value) BookScannerView(onBarcode = { delivered.value = true },
-                onTextConfirmed = { _, image, _ -> delivered.value = true; image.recycle() },
-                onShelfConfirmed = { _, image, _ -> delivered.value = true; image.recycle() },
+                onTextConfirmed = { delivered.value = true },
+                onShelfConfirmed = { _, _ -> delivered.value = true },
                 onClose = { open.value = false }) else Text("Testliste")
         }
         repeat(2) {
             ui.waitUntil(15_000) {
-                ui.onAllNodesWithText("Schließen").fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty()
+                ui.onAllNodesWithContentDescription("Kamera schließen").fetchSemanticsNodes(atLeastOneRootRequired = false).isNotEmpty()
             }
             ui.waitUntil(20_000) {
                 delivered.value || ui.onAllNodesWithText("Buch ins Bild halten").fetchSemanticsNodes(atLeastOneRootRequired = false).isEmpty()
             }
             ui.onNodeWithText("Kamera konnte nicht gestartet werden").assertDoesNotExist()
             ui.onNodeWithText("Erkennung unterbrochen – bitte erneut ausrichten").assertDoesNotExist()
-            ui.onNodeWithText("Schließen").performClick()
+            ui.onNodeWithContentDescription("Kamera schließen").performClick()
             ui.onNodeWithText("Testliste").assertIsDisplayed()
             if (it == 0) ui.runOnIdle { delivered.value = false; open.value = true }
         }

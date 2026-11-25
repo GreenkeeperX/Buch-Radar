@@ -1,5 +1,9 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package de.buchradar.app
 
+import de.buchradar.app.ui.ActionButtonHeight
+import de.buchradar.app.ui.ImportantButtonHeight
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
@@ -7,6 +11,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
@@ -77,8 +82,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-data class MomoxSummary(val available: Int, val unavailable: Int, val errors: Int, val totalValueCents: Long = 0)
-
 internal fun formatDateTime(millis: Long): String = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.GERMANY).format(Date(millis))
 
 /**
@@ -105,64 +108,46 @@ internal fun ListOverview(title: String, totals: BookListTotals, showValue: Bool
                 Text("Ankauf für ${totals.availableCount} ${if (totals.availableCount == 1) "Buch" else "Bücher"}",
                     style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            if (onSell != null) FilledTonalButton(onClick = onSell, modifier = Modifier.padding(start = 8.dp).heightIn(min = 48.dp)) {
+            if (onSell != null) FilledTonalButton(onClick = onSell, modifier = Modifier.padding(start = 8.dp).heightIn(min = ActionButtonHeight)) {
                 Text("Verkaufen")
             }
         }
     }
 }
 
-/**
- * One compact line for Momox: the last result (tap for the value, × to hide) and the check
- * action. Without a result a full-width button says what the check does.
- */
+/** "heute 14:05", "gestern 09:12" or "21.11.2026": short enough for one quiet line. */
+internal fun formatCheckedAt(millis: Long, now: Long = System.currentTimeMillis()): String {
+    fun midnight(t: Long) = java.util.Calendar.getInstance().apply {
+        timeInMillis = t; set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0)
+        set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+    }.timeInMillis
+    val time = SimpleDateFormat("HH:mm", Locale.GERMANY).format(Date(millis))
+    // Rounded day difference between local midnights, so daylight saving and year ends count right.
+    return when (Math.round((midnight(now) - midnight(millis)) / 86_400_000.0)) {
+        0L -> "heute $time"
+        1L -> "gestern $time"
+        else -> SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY).format(Date(millis))
+    }
+}
+
 @Composable
-internal fun MomoxActionRow(summary: MomoxSummary?, expanded: Boolean, canCheck: Boolean,
-    onToggle: () -> Unit, onDismiss: () -> Unit, onCheck: () -> Unit) {
-    val status = LocalStatusColors.current
+internal fun MomoxActionRow(lastCheckedAt: Long?, errors: Int, canCheck: Boolean, checkDue: Boolean, onShowErrors: () -> Unit, onCheck: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
-    // With large fonts result and check button get their own lines, so the counts are never cut.
-    val stacked = summary != null && androidx.compose.ui.platform.LocalConfiguration.current.fontScale >= 1.3f
-    Column(Modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            if (summary != null) {
-                // Label and values on two short lines, so the row never wraps mid-phrase.
-                Column(Modifier.weight(1f).clickable(onClickLabel = if (expanded) "Weniger anzeigen" else "Ankaufwert anzeigen", onClick = onToggle)
-                    .padding(vertical = 4.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Letzte Prüfung", style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
-                        Icon(if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown, contentDescription = null,
-                            tint = scheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
-                    }
-                    Text(
-                        buildAnnotatedString {
-                            withStyle(SpanStyle(color = if (summary.available > 0) status.success else scheme.onSurfaceVariant, fontWeight = FontWeight.Bold)) {
-                                append("${summary.available} Ankauf")
-                            }
-                            append(" · ${summary.unavailable} ohne")
-                            if (summary.errors > 0) withStyle(SpanStyle(color = scheme.error, fontWeight = FontWeight.Bold)) { append(" · ${summary.errors} Fehler") }
-                        },
-                        style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant,
-                        maxLines = if (stacked) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis
-                    )
-                }
-                IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, contentDescription = "Ergebnis ausblenden", tint = scheme.onSurfaceVariant) }
-            }
-            // Without a result the button alone says what it does and takes the full width.
-            if (canCheck && !stacked) FilledTonalButton(onClick = onCheck, contentPadding = PaddingValues(horizontal = 14.dp),
-                modifier = if (summary == null) Modifier.fillMaxWidth().heightIn(min = 48.dp) else Modifier.heightIn(min = 48.dp)) {
-                Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text(if (summary == null) "Ankaufpreise bei Momox prüfen" else "Momox prüfen")
-            }
+    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalArrangement = Arrangement.Center) {
+        lastCheckedAt?.let {
+            Text("Geprüft ${formatCheckedAt(it)}", style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
         }
-        if (canCheck && stacked) FilledTonalButton(onClick = onCheck, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+        if (errors > 0) TextButton(onClick = onShowErrors, modifier = Modifier.heightIn(min = 48.dp)) {
+            Text("$errors Fehler im Bestand", color = scheme.error)
+        }
+        val label: @Composable () -> Unit = {
             Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))
             Text("Momox prüfen")
         }
-        if (summary != null && expanded) Text("Ankaufwert dieser Prüfung: ${formatEuro(summary.totalValueCents)}",
-            style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 4.dp))
+        // Quiet link while the list is fresh; a real button once a check is due.
+        if (canCheck && checkDue) FilledTonalButton(onClick = onCheck, modifier = Modifier.heightIn(min = ImportantButtonHeight)) { label() }
+        else if (canCheck) TextButton(onClick = onCheck, modifier = Modifier.heightIn(min = 48.dp)) { label() }
     }
 }
 
@@ -267,7 +252,6 @@ internal fun CandidateCard(candidate: CatalogBook, alreadyAdded: Boolean, isSold
                     }
                     StatusPill(label, container, content)
                 }
-                candidate.visualSimilarity?.let { Text("Coverähnlichkeit: $it/100 · experimentell", style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant) }
                 var showSources by rememberSaveable(candidate.candidateId) { mutableStateOf(false) }
                 if (candidate.sources.isNotEmpty()) TextButton(onClick = { showSources = !showSources }, contentPadding = ButtonDefaults.TextButtonContentPadding) {
                     if (candidate.conflictingFields.isNotEmpty()) Icon(Icons.Filled.Warning, null, tint = scheme.tertiary, modifier = Modifier.size(18.dp).padding(end = 4.dp))
@@ -281,7 +265,7 @@ internal fun CandidateCard(candidate: CatalogBook, alreadyAdded: Boolean, isSold
                         values.forEach { value -> Text("$label: ${value.value} (${value.sources.joinToString()})", style = MaterialTheme.typography.bodyMedium) }
                     }
                 }
-                Button(onClick = onClick, enabled = !alreadyAdded, modifier = Modifier.fillMaxWidth()) {
+                Button(onClick = onClick, enabled = !alreadyAdded, modifier = Modifier.fillMaxWidth().heightIn(min = ImportantButtonHeight)) {
                     Text(when { alreadyAdded -> "Bereits in Liste"; isSold -> "Zurück in meine Bücher"; candidate.isbn == null -> "Ohne ISBN erfassen"; else -> "Buch hinzufügen" })
                 }
             }
@@ -318,7 +302,7 @@ internal fun EditBookDialog(
             }
         },
         confirmButton = {
-            FilledTonalButton(enabled = !saving, onClick = {
+            FilledTonalButton(modifier = Modifier.heightIn(min = ActionButtonHeight), enabled = !saving, onClick = {
                 scope.launch {
                     saving = true
                     // A database failure must not crash the dialog; show it instead.

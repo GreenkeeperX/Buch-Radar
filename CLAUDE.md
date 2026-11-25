@@ -42,7 +42,7 @@ virtuellen Umgebung installieren, dann im Ordner `backend`:
   Regal-Nachbearbeitung, unabhängig von der Bücherdatenbank.
 - `data/`: Room, Migrationen, Warteschlange, Angebote und Export/Import.
 - `MomoxCheckCoordinator.kt`, `MomoxPeriodicWorker.kt`: gemeinsamer Prüfablauf.
-- `network/`: konkrete Katalogausgaben, Quellenzugriff, Coververgleich, Momox.
+- `network/`: konkrete Katalogausgaben, Quellenzugriff, Momox.
 - `scanner/`: CameraX, lokale ML-Kit-Erkennung und Stabilitätsregeln.
 - `src/test` und `src/androidTest` unter `android/app`: Regressionstests.
 - `backend/`: unangebundener Demoentwurf, keine echte Momox-Implementierung.
@@ -54,8 +54,8 @@ virtuellen Umgebung installieren, dann im Ordner `backend`:
 - Fehlgeschlagene Prüfungen dürfen den letzten gültigen Preis nicht löschen.
 - Nur UI-Coroutines mit Compose-FrameClock dürfen Listenanimationen ausführen.
 - Kamera-Bilder bleiben lokal und kurzlebig. Regal-Fortsetzung speichert keine Fotos.
-- Keine Qualitätsbehauptungen ohne Messung an Referenzfällen. Der Covermodus ist
-  textgestützte Kandidatensuche mit experimentellem Bildvergleich, keine Bildsuchmaschine.
+- Keine Qualitätsbehauptungen ohne Messung an Referenzfällen. Katalogtreffer
+  behalten die Reihenfolge der Textsuche.
 - GPL-3.0-only erhalten. Keine Zugangswerte, privaten Bilder, Listen, Gerätekennungen
   oder lokalen Pfade veröffentlichen; auch APK-Inhalte prüfen.
   `tools/check-secrets.sh` läuft in CI und als Commit-Hook

@@ -52,7 +52,7 @@ fun formatEuro(cents: Long): String = NumberFormat.getCurrencyInstance(Locale.GE
 
 /** Status line with tone-dependent colour and icon; announced by TalkBack. */
 @Composable
-fun InfoBanner(text: String, modifier: Modifier = Modifier, onDismiss: (() -> Unit)? = null) {
+fun InfoBanner(text: String, modifier: Modifier = Modifier, compact: Boolean = false, onDismiss: (() -> Unit)? = null) {
     val tone = messageTone(text)
     val status = LocalStatusColors.current
     val scheme = MaterialTheme.colorScheme
@@ -65,7 +65,8 @@ fun InfoBanner(text: String, modifier: Modifier = Modifier, onDismiss: (() -> Un
         color = container, contentColor = content, shape = RoundedCornerShape(12.dp),
         modifier = modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite }
     ) {
-        Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically,
+        val verticalPadding = if (compact) 0.dp else 8.dp
+        Row(Modifier.padding(start = 12.dp, end = 4.dp, top = verticalPadding, bottom = verticalPadding), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             when (tone) {
                 MessageTone.PROGRESS -> CircularProgressIndicator(Modifier.size(20.dp), color = content, strokeWidth = 2.5.dp)
@@ -147,3 +148,9 @@ fun MomoxStatusPill(book: BookEntity, modifier: Modifier = Modifier) {
 fun SectionTitle(text: String, modifier: Modifier = Modifier) {
     Text(text, modifier.padding(top = 8.dp), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
 }
+
+/** One visible minimum height (Material's 40 dp) for all filled, outlined, tonal and segmented buttons; touch targets stay 48 dp via minimumInteractiveComponentSize. */
+val ActionButtonHeight = androidx.compose.material3.ButtonDefaults.MinHeight
+
+/** Higher visible height for finding, searching and checking actions (search row, add candidate, Momox check, scan more). */
+val ImportantButtonHeight = 48.dp

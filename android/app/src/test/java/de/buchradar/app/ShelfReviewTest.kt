@@ -24,12 +24,12 @@ class ShelfReviewTest {
     @Test fun pendingSearchSurvivesControllerRecreation() = runTest {
         val store = MemoryStore()
         val firstScope = work()
-        val first = ShelfReviewController(firstScope, store) { _, _ -> awaitCancellation() }
+        val first = ShelfReviewController(firstScope, store) { awaitCancellation() }
         first.append(listOf("Buch A")); runCurrent()
         first.pause(); firstScope.cancel(); runCurrent()
         val secondScope = work()
         try {
-            val restored = ShelfReviewController(secondScope, store) { text, _ -> listOf(book(text)) }
+            val restored = ShelfReviewController(secondScope, store) { text -> listOf(book(text)) }
             runCurrent()
             assertTrue(restored.state.value.groups.single().pending)
             assertFalse(restored.busy.value)
@@ -44,7 +44,7 @@ class ShelfReviewTest {
         val scope = work()
         val calls = mutableListOf<String>()
         try {
-            val review = ShelfReviewController(scope, store) { text, _ ->
+            val review = ShelfReviewController(scope, store) { text ->
                 calls += text
                 if (text == "Falsch") withContext(NonCancellable) { delay(1_000) }
                 listOf(book(text))
@@ -63,7 +63,7 @@ class ShelfReviewTest {
         val scope = work()
         var calls = 0
         try {
-            val review = ShelfReviewController(scope, store) { text, _ -> calls++; listOf(book(text)) }
+            val review = ShelfReviewController(scope, store) { text -> calls++; listOf(book(text)) }
             review.append(listOf("Buch")); advanceUntilIdle()
             val id = review.state.value.groups.single().id
             review.postpone(id); advanceUntilIdle()
@@ -80,7 +80,7 @@ class ShelfReviewTest {
         val store = MemoryStore()
         val scope = work()
         try {
-            val review = ShelfReviewController(scope, store) { text, _ -> listOf(book(text)) }
+            val review = ShelfReviewController(scope, store) { text -> listOf(book(text)) }
             review.append(listOf("Gleicher Text", "Gleicher Text")); advanceUntilIdle()
             val secondId = review.state.value.groups.last().id
             review.complete(review.state.value.groups.first().id); advanceUntilIdle()
@@ -96,7 +96,7 @@ class ShelfReviewTest {
         val scope = work()
         var fail = true
         try {
-            val review = ShelfReviewController(scope, store) { text, _ ->
+            val review = ShelfReviewController(scope, store) { text ->
                 if (text == "Erstes" && fail) error("Offline")
                 listOf(book(text))
             }
@@ -114,7 +114,7 @@ class ShelfReviewTest {
         val store = MemoryStore()
         val scope = work()
         try {
-            val review = ShelfReviewController(scope, store) { text, _ -> listOf(book(text)) }
+            val review = ShelfReviewController(scope, store) { text -> listOf(book(text)) }
             review.append(listOf("Buch")); advanceUntilIdle()
             val before = store.saved
             store.failWrites = true
@@ -130,7 +130,7 @@ class ShelfReviewTest {
         val scope = work()
         var calls = 0
         try {
-            val review = ShelfReviewController(scope, store) { text, _ -> calls++; listOf(book(text)) }
+            val review = ShelfReviewController(scope, store) { text -> calls++; listOf(book(text)) }
             review.append(listOf("Buch")); runCurrent()
             review.pause(); advanceUntilIdle()
             assertEquals(0, calls)
@@ -149,7 +149,7 @@ class ShelfReviewTest {
             override suspend fun write(state: ShelfReviewState) { saved = state; broken = false }
         }
         try {
-            val review = ShelfReviewController(scope, store) { text, _ -> listOf(book(text)) }
+            val review = ShelfReviewController(scope, store) { text -> listOf(book(text)) }
             review.append(listOf("Neuer Scan")); advanceUntilIdle()
             assertTrue(broken)
             assertNotNull(review.error.value)

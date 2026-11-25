@@ -1,5 +1,7 @@
 package de.buchradar.app
 
+import de.buchradar.app.ui.ActionButtonHeight
+import de.buchradar.app.ui.ImportantButtonHeight
 import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -97,7 +99,7 @@ fun SaleScreen(
                         .putExtra(Intent.EXTRA_TEXT, SaleList.shareText(chosen, System.currentTimeMillis()))
                     // A very long list can exceed what an intent may carry; say so instead of crashing.
                     shareFailed = runCatching { context.startActivity(Intent.createChooser(send, "Liste teilen")) }.isFailure
-                }, enabled = chosen.isNotEmpty(), modifier = modifier.heightIn(min = 52.dp)) {
+                }, enabled = chosen.isNotEmpty(), modifier = modifier.heightIn(min = ActionButtonHeight)) {
                     Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.padding(end = 8.dp)); Text("Teilen")
                 }
             }
@@ -105,9 +107,9 @@ fun SaleScreen(
                 Button(onClick = {
                     busy = true; conflict = false
                     onMarkSold(chosen.associate { it.id to BookListQuery.offeredCents(it) }) { outcome -> busy = false; conflict = outcome == false }
-                }, enabled = chosen.isNotEmpty() && !busy, modifier = modifier.heightIn(min = 52.dp)) {
+                }, enabled = chosen.isNotEmpty() && !busy, modifier = modifier.heightIn(min = ActionButtonHeight)) {
                     Icon(painterResource(R.drawable.ic_sold), contentDescription = null, modifier = Modifier.padding(end = 8.dp))
-                    Text("Als verkauft markieren")
+                    Text("Verkauft markieren")
                 }
             }
             if (configuration.fontScale >= 1.3f) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -140,7 +142,7 @@ fun SaleScreen(
                             else "$dropped gewählte Bücher sind nicht mehr dabei: kein aktuelles Angebot oder schon verkauft.",
                             style = MaterialTheme.typography.bodyMedium, color = scheme.error)
                         paused?.let { Text("Neuprüfung angehalten: $it", style = MaterialTheme.typography.bodyMedium, color = scheme.error) }
-                        if (stale.isNotEmpty()) FilledTonalButton(onClick = { onRecheck(stale) }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                        if (stale.isNotEmpty()) FilledTonalButton(onClick = { onRecheck(stale) }, modifier = Modifier.fillMaxWidth().heightIn(min = ImportantButtonHeight)) {
                             Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
                             Text(if (stale.size == 1) "1 älteren Preis neu prüfen" else "${stale.size} ältere Preise neu prüfen")
                         }
@@ -154,33 +156,35 @@ fun SaleScreen(
                     val queued = book.isbn in pending
                     Card(colors = CardDefaults.cardColors(containerColor = if (selected) scheme.surfaceContainer else scheme.surface),
                         modifier = Modifier.fillMaxWidth()) {
-                        Row(
+                        Column(
                             Modifier.fillMaxWidth().heightIn(min = 64.dp)
                                 .toggleable(value = selected, role = Role.Checkbox, onValueChange = { on ->
                                     val current = chosenIds.orEmpty()
                                     onChosenChange(if (on) current + book.id else current - book.id)
                                 })
-                                .padding(horizontal = 8.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                                .padding(horizontal = 8.dp, vertical = 10.dp)
                         ) {
-                            // The whole row toggles; the box only shows the state.
-                            Checkbox(checked = selected, onCheckedChange = null, modifier = Modifier.padding(horizontal = 8.dp))
-                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text(book.title ?: "Unbekannter Titel", style = MaterialTheme.typography.titleMedium)
-                                book.author?.takeIf(String::isNotBlank)?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant) }
-                                Text(BookInputFormat.screenIsbn(book.isbn), style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
-                                when {
-                                    queued && paused != null -> Text("Neuprüfung angehalten", style = MaterialTheme.typography.bodyMedium, color = scheme.error)
-                                    queued -> Text("Wird gerade neu geprüft …", style = MaterialTheme.typography.bodyMedium, color = scheme.primary)
-                                    SaleList.needsRecheck(book, now) -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        Icon(Icons.Filled.Warning, contentDescription = null, tint = scheme.tertiary, modifier = Modifier.size(18.dp))
-                                        Text(book.lastCheckedAt?.let { "Preis vom ${formatDateTime(it)}" + if (book.lastAttemptStatus == "ERROR") ", letzte Prüfung fehlgeschlagen" else "" }
-                                            ?: "Noch nicht geprüft", style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                // The whole row toggles; the box only shows the state.
+                                Checkbox(checked = selected, onCheckedChange = null, modifier = Modifier.padding(horizontal = 8.dp))
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(book.title ?: "Unbekannter Titel", style = MaterialTheme.typography.titleMedium)
+                                    book.author?.takeIf(String::isNotBlank)?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant) }
+                                    when {
+                                        queued && paused != null -> Text("Neuprüfung angehalten", style = MaterialTheme.typography.bodyMedium, color = scheme.error)
+                                        queued -> Text("Wird gerade neu geprüft …", style = MaterialTheme.typography.bodyMedium, color = scheme.primary)
+                                        SaleList.needsRecheck(book, now) -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            Icon(Icons.Filled.Warning, contentDescription = null, tint = scheme.tertiary, modifier = Modifier.size(18.dp))
+                                            Text(book.lastCheckedAt?.let { "Preis vom ${formatDateTime(it)}" + if (book.lastAttemptStatus == "ERROR") ", letzte Prüfung fehlgeschlagen" else "" }
+                                                ?: "Noch nicht geprüft", style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+                                        }
                                     }
                                 }
+                                Text(formatEuro((BookListQuery.offeredCents(book) ?: 0).toLong()), Modifier.padding(start = 8.dp, end = 4.dp),
+                                    style = MaterialTheme.typography.titleMedium, color = status.success, fontWeight = FontWeight.Bold)
                             }
-                            Text(formatEuro((BookListQuery.offeredCents(book) ?: 0).toLong()), Modifier.padding(start = 8.dp, end = 4.dp),
-                                style = MaterialTheme.typography.titleMedium, color = status.success, fontWeight = FontWeight.Bold)
+                            Text("ISBN ${BookInputFormat.displayIsbn(book.isbn)}", Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                                style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
                         }
                     }
                 }

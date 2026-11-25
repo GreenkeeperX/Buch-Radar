@@ -31,6 +31,7 @@ object BookListQuery {
 
     fun filterLabel(key: String) = filters.firstOrNull { it.first == key }?.second ?: "Alle"
     fun sortLabel(key: String) = sorts.firstOrNull { it.first == key }?.second ?: "Neueste"
+    fun resultCountLabel(count: Int) = if (count == 0) "Keine Treffer" else "$count Treffer"
 
     /** Case-, accent- and punctuation-insensitive form; "Müller" matches "muller". */
     fun fold(value: String): String = Normalizer.normalize(value.lowercase(Locale.ROOT), Normalizer.Form.NFD)
@@ -92,6 +93,12 @@ data class BookListTotals(
     val errorCount: Int
 )
 
+sealed interface BookInput {
+    data class AddIsbn(val isbn: String) : BookInput
+    data class SearchTitle(val text: String) : BookInput
+    data object Invalid : BookInput
+}
+
 /** Formatting of typed or scanned ISBN input. */
 object BookInputFormat {
     /** Accepts ISBN-10/13 with or without hyphens and spaces. */
@@ -101,6 +108,15 @@ object BookInputFormat {
         val compact = value.trim().filterNot { it == '-' || it.isWhitespace() }
         if (compact.isEmpty()) return null
         return catchingOperation { ISBN.valueOf(compact) }.getOrNull()
+    }
+
+    fun classify(text: String): BookInput {
+        val isbn = parseIsbn(text)?.toCompactString() ?: BookIdentity.unambiguousIsbn(text)
+        return when {
+            isbn != null -> BookInput.AddIsbn(isbn)
+            text.any(Char::isLetter) -> BookInput.SearchTitle(text)
+            else -> BookInput.Invalid
+        }
     }
 
     /** Hyphenated display form of a complete ISBN; other input is returned unchanged. */

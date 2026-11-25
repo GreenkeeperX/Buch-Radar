@@ -27,6 +27,15 @@ object SaleList {
     fun needsRecheck(book: BookEntity, now: Long): Boolean =
         book.lastCheckedAt == null || now - book.lastCheckedAt >= STALE_AFTER_MILLIS || book.lastAttemptStatus == "ERROR"
 
+    fun eligibleForCheck(books: List<BookEntity>) = books.filter { it.soldAt == null && it.isbn.isNotBlank() }
+
+    /** Wake the list when the next currently fresh book reaches the shared recheck threshold. */
+    fun nextRecheckAt(eligible: List<BookEntity>, now: Long): Long? = eligible.asSequence()
+        .filterNot { needsRecheck(it, now) }
+        .mapNotNull { it.lastCheckedAt }
+        .filter { it <= Long.MAX_VALUE - STALE_AFTER_MILLIS }
+        .minOrNull()?.plus(STALE_AFTER_MILLIS)
+
     fun shareText(books: List<BookEntity>, now: Long): String {
         val euro = NumberFormat.getCurrencyInstance(Locale.GERMANY)
         val day = SimpleDateFormat("dd.MM.yyyy", Locale.GERMANY)
