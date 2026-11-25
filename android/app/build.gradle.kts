@@ -1,3 +1,5 @@
+import java.security.MessageDigest
+import java.net.URI
 import java.util.Properties
 
 plugins {
@@ -93,10 +95,42 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.7.0")
     // Apache-2.0; ORB features and RANSAC homography for cover confirmation.
     implementation("org.opencv:opencv:4.13.0")
+    // Apache-2.0; fallback reader for Fraktur and script titles (single book, only when needed).
+    implementation("com.github.adaptech-cz.Tesseract4Android:tesseract4android:4.8.0")
     implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.squareup.retrofit2:converter-moshi:2.11.0")
     implementation("com.squareup.moshi:moshi-kotlin:1.15.2")
     implementation("net.creativecouple.validation:fast-isbn:1.2.47")
     debugImplementation("androidx.compose.ui:ui-tooling")
+}
+
+// Tesseract models (Apache-2.0, tesseract-ocr/tessdata_best and tessdata_fast) are downloaded at build time
+// with fixed checksums instead of being committed.
+val tessModels = mapOf(
+    "deu_latf.traineddata" to ("https://github.com/tesseract-ocr/tessdata_best/raw/main/deu_latf.traineddata" to "429b8c33d37e1a4823a2bb082a644ff13e252f735b7945e08a518d22ddcc459e"),
+    "deu.traineddata" to ("https://github.com/tesseract-ocr/tessdata_best/raw/main/deu.traineddata" to "8407331d6aa0229dc927685c01a7938fc5a641d1a9524f74838cdac599f0d06e"),
+    "deu_fast.traineddata" to ("https://github.com/tesseract-ocr/tessdata_fast/raw/main/deu.traineddata" to "19d219bbb6672c869d20a9636c6816a81eb9a71796cb93ebe0cb1530e2cdb22d")
+)
+abstract class DownloadTessModels : DefaultTask() {
+    @get:Input abstract val models: MapProperty<String, String>
+    @get:OutputDirectory abstract val outputDir: DirectoryProperty
+    @TaskAction fun download() {
+        val dir = outputDir.get().dir("tessdata").asFile.apply { mkdirs() }
+        models.get().forEach { (name, spec) ->
+            val (url, checksum) = spec.split(" ")
+            val target = File(dir, name)
+            fun sha(file: File) = MessageDigest.getInstance("SHA-256").digest(file.readBytes()).joinToString("") { "%02x".format(it) }
+            if (!target.exists() || sha(target) != checksum) {
+                URI(url).toURL().openStream().use { input -> target.outputStream().use { input.copyTo(it) } }
+                check(sha(target) == checksum) { "Prüfsumme von $name stimmt nicht" }
+            }
+        }
+    }
+}
+val downloadTessModels = tasks.register<DownloadTessModels>("downloadTessModels") {
+    models.set(tessModels.mapValues { (_, source) -> "${source.first} ${source.second}" })
+}
+androidComponents {
+    onVariants { variant -> variant.sources.assets?.addGeneratedSourceDirectory(downloadTessModels, DownloadTessModels::outputDir) }
 }

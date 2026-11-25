@@ -13,8 +13,10 @@ import de.buchradar.app.network.CatalogBook
 import de.buchradar.app.network.CatalogResult
 import android.graphics.Bitmap
 import de.buchradar.app.cover.CoverConfirmation
+import de.buchradar.app.fraktur.FrakturFallback
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 
 /** List searches and their navigation state are owned by the session, including across rotation. */
@@ -27,7 +29,9 @@ internal class BookSearch(
         CatalogAccess.report { BookCatalog.findByRecognizedText(title) }
     },
     /** Candidate ids whose cover matches the photographed single book (see CoverVerifier). */
-    private val confirmCovers: suspend (Bitmap, List<CatalogBook>) -> Set<String> = { _, _ -> emptySet() }
+    private val confirmCovers: suspend (Bitmap, List<CatalogBook>) -> Set<String> = { _, _ -> emptySet() },
+    /** Title text read with the old-script models (see FrakturReader), or null. */
+    private val readOldScript: suspend (Bitmap, Boolean) -> String? = { _, _ -> null }
 ) {
     val input = mutableStateOf("")
     val showSold = mutableStateOf(false)
@@ -42,11 +46,16 @@ internal class BookSearch(
     var requestId = 0L
         private set
     private var job: Job? = null
+    /** Photo behind the shown candidates, kept in memory for "Alte Schrift lesen" until the search is left. */
+    private var shownFrame: Bitmap? = null
+    var oldScriptAvailable by mutableStateOf(false)
+        private set
 
     fun leave() {
         requestId++
         job?.cancel()
         job = null
+        releaseShownFrame()
         if (busy || candidates.isNotEmpty()) message.value = null
         candidates = emptyList()
         busy = false
@@ -56,6 +65,113 @@ internal class BookSearch(
      * [frame] is an in-memory photo of a single book (only from the camera behind coverEvidenceAllowed). This
      * search owns it from the call on and recycles it on every path, including cancellation.
      */
+    private fun releaseShownFrame() { shownFrame?.recycle(); shownFrame = null; oldScriptAvailable = false }
+
+    /** The running old-script reading only; cancelling it keeps the search, its first result and message. */
+    private var reading: kotlinx.coroutines.Job? = null
+
+    /** Stops a running old-script reading; the candidates found so far and their cover check stay. */
+    fun cancelOldScript() {
+        reading?.cancel()
+    }
+
+    /** Manual old-script reading of the photographed single book behind the shown candidates. */
+    fun readOldScriptNow() {
+        val frame = shownFrame?.let { runCatching { it.copy(Bitmap.Config.ARGB_8888, false) }.getOrNull() } ?: return
+        oldScriptAvailable = false
+        job?.cancel()
+        val id = ++requestId
+        busy = true
+        job = scope.launch(start = kotlinx.coroutines.CoroutineStart.ATOMIC) {
+            try {
+                if (id != requestId) return@launch
+                val shown = candidates
+                val better = oldScriptSearch(frame, id)
+                if (id != requestId || candidates !== shown) return@launch
+                if (better != null) {
+                    candidates = better
+                    message.value = null
+                    val confirmed = catchingOperation { confirmCovers(frame, better) }.getOrDefault(emptySet())
+                    if (id == requestId && candidates === better) candidates = CoverConfirmation.apply(better, confirmed)
+                } else message.value = "Auch mit alter Schrift kein passender Treffer."
+            } finally {
+                frame.recycle()
+                if (id == requestId) { busy = false; if (message.value == OLD_SCRIPT_PROGRESS) message.value = null }
+            }
+        }
+    }
+
+    /**
+     * Reads the title area with the old-script models and searches again as a cancellable child of the current
+     * request; null unless a fitting hit appears or when the reading was cancelled.
+     */
+    private suspend fun oldScriptSearch(frame: Bitmap, id: Long): List<CatalogBook>? = kotlinx.coroutines.coroutineScope {
+        val previous = message.value
+        message.value = OLD_SCRIPT_PROGRESS
+        val child = async {
+            val text = catchingOperation { readOldScript(frame, false) }.getOrNull()
+            if (text.isNullOrBlank() || id != requestId) return@async null
+            val again = catchingOperation { byTitle(text) }.getOrNull()?.value.orEmpty()
+            again.takeIf { list -> list.any { (it.textSimilarity ?: 0) >= FrakturFallback.FITTING_SIMILARITY } }
+        }
+        reading = child
+        try {
+            child.join()
+            if (child.isCancelled) null else child.await()
+        } finally {
+            reading = null
+            if (message.value == OLD_SCRIPT_PROGRESS) message.value = previous
+        }
+    }
+
+    /**
+     * Camera photo of one book whose lettering the normal recognition could not read: read it with the
+     * old-script models, then search like typed text. Owns and recycles [frame]; nothing is searched without text.
+     */
+    fun readPhoto(frame: Bitmap) {
+        leave()
+        showSold.value = false
+        busy = true
+        val id = requestId
+        job = scope.launch(start = kotlinx.coroutines.CoroutineStart.ATOMIC) {
+            try {
+                if (id != requestId) return@launch
+                message.value = OLD_SCRIPT_PROGRESS
+                val child = async { catchingOperation { readOldScript(frame, true) }.getOrNull()?.trim().orEmpty() }
+                reading = child
+                child.join()
+                reading = null
+                val text = if (child.isCancelled) "" else child.await()
+                if (id != requestId) return@launch
+                if (text.none(Char::isLetter)) {
+                    message.value = if (child.isCancelled) null else "Keine Schrift erkannt. Bitte näher heran oder „Von Hand“ eintragen."
+                    return@launch
+                }
+                input.value = text
+                message.value = "Suche nach Titel und Autor …"
+                val result = catchingOperation { byTitle(text) }
+                if (id != requestId) return@launch
+                candidates = result.getOrNull()?.value.orEmpty()
+                message.value = when {
+                    result.isFailure -> "Buchkatalog nicht erreichbar. Bitte Internetverbindung prüfen."
+                    result.getOrNull()?.warnings?.isNotEmpty() == true -> result.getOrThrow().warnings.joinToString("\n")
+                    candidates.isEmpty() -> "Keine passenden Treffer gefunden. Prüfe den Text oder erfasse das Buch von Hand."
+                    else -> null
+                }
+                val found = candidates
+                busy = false
+                if (found.isNotEmpty()) {
+                    val confirmed = catchingOperation { confirmCovers(frame, found) }.getOrDefault(emptySet())
+                    if (id == requestId && candidates === found) candidates = CoverConfirmation.apply(found, confirmed)
+                }
+            } finally {
+                reading = null
+                frame.recycle()
+                if (id == requestId) busy = false
+            }
+        }
+    }
+
     fun submit(action: BookInput, active: List<BookEntity>, sold: List<BookEntity>, frame: Bitmap? = null,
                insert: suspend (BookEntity) -> Long) {
         leave()
@@ -96,7 +212,20 @@ internal class BookSearch(
                             candidates.isEmpty() -> "Keine passenden Treffer gefunden. Prüfe den Text oder erfasse das Buch manuell."
                             else -> null
                         }
-                        val found = candidates
+                        var found = candidates
+                        // Old-script fallback: single book in focus, no ISBN, no fitting hit. The first list stays
+                        // visible while reading; closing the progress note cancels only the reading.
+                        if (coverFrame != null && FrakturFallback.shouldRun(hasSingleBookFrame = true, usedIsbn = false, candidates = found)) {
+                            val noHitMessage = message.value
+                            val better = oldScriptSearch(coverFrame, id)
+                            if (id != requestId || candidates !== found) return@launch
+                            if (better != null) { found = better; candidates = better; message.value = null }
+                            else message.value = noHitMessage
+                        } else if (coverFrame != null) {
+                            // Keep the photo for a manual reading when the first list does not contain the book.
+                            shownFrame = runCatching { coverFrame.copy(Bitmap.Config.ARGB_8888, false) }.getOrNull()
+                            oldScriptAvailable = shownFrame != null
+                        }
                         busy = false
                         if (coverFrame != null && found.isNotEmpty()) {
                             val confirmed = catchingOperation { confirmCovers(coverFrame, found) }.getOrDefault(emptySet())
@@ -145,3 +274,5 @@ internal class BookSearch(
         }
     }
 }
+
+internal const val OLD_SCRIPT_PROGRESS = "Alte Schrift wird gelesen … (zum Abbrechen schließen)"

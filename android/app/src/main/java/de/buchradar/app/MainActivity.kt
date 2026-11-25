@@ -534,6 +534,14 @@ class MainActivity : ComponentActivity() {
                                 // The search owns the frame from here on and releases it on every path.
                                 search.submit(action, books, soldBooks, frame, dao::insert)
                             },
+                            onOldScriptPhoto = { photo ->
+                                AppLog.add(context, "Foto für alte Schrift übernommen")
+                                scannerOpen = false
+                                shelfReviewOpen = false
+                                searchInput = ""
+                                // The search owns the photo from here on and releases it on every path.
+                                search.readPhoto(photo)
+                            },
                             onShelfConfirmed = { spines, warning ->
                                 AppLog.add(context, "Regal-OCR übernommen (${spines.size} Buchrücken)")
                                 searchInput = ""
@@ -664,7 +672,11 @@ class MainActivity : ComponentActivity() {
                                 keyboardOptions = searchKeyboardOptions,
                                 keyboardActions = searchKeyboardActions
                             )
-                            message?.let { InfoBanner(it, onDismiss = { message = null }) }
+                            message?.let { InfoBanner(it, onDismiss = { if (it == OLD_SCRIPT_PROGRESS) search.cancelOldScript() else message = null }) }
+                            // Manual old-script reading of the photographed single book, offered once per search.
+                            if (search.oldScriptAvailable && !isSearching)
+                                OutlinedButton(onClick = { search.readOldScriptNow() },
+                                    modifier = Modifier.fillMaxWidth().heightIn(min = ImportantButtonHeight)) { Text("Alte Schrift lesen") }
                             Text("ISBN und Ausgabe vergleichen.",
                                 style = MaterialTheme.typography.bodyMedium, color = colorScheme.onSurfaceVariant)
                             LazyColumn(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -808,7 +820,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                             message?.let { notice ->
-                                item(key = "static:message") { InfoBanner(notice, compact = true, onDismiss = { message = null }) }
+                                item(key = "static:message") { InfoBanner(notice, compact = true, onDismiss = { if (notice == OLD_SCRIPT_PROGRESS) search.cancelOldScript() else message = null }) }
                             }
                             if (visibleBooks.isEmpty()) item(key = "static:empty") {
                                 val noBooksYet = if (showSoldBooks) soldBooks.isEmpty() else books.isEmpty()
