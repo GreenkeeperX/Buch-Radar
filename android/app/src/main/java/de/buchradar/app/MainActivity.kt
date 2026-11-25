@@ -121,6 +121,15 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -907,55 +916,86 @@ class MainActivity : ComponentActivity() {
                         Column(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.ime.exclude(WindowInsets.navigationBars))
                             .padding(horizontal = 16.dp).padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             message?.let { InfoBanner(it, compact = true, onDismiss = { message = null }) }
-                            if (!selectionMode) OutlinedTextField(
+                            if (!selectionMode) {
+                                // 48 dp instead of the 56 dp OutlinedTextField: same look, less vertical padding.
+                                val searchInteraction = remember { MutableInteractionSource() }
+                                val searchColors = OutlinedTextFieldDefaults.colors()
+                                val onSearchAction = { if (showSoldBooks) keyboard?.hide() else if (searchInput.isNotBlank()) submitInput(searchInput) }
+                                BasicTextField(
                                     value = searchInput,
                                     onValueChange = { searchInput = it },
-                                    placeholder = { Text(if (showSoldBooks) "Verkaufte durchsuchen" else "ISBN oder Titel", maxLines = 1) },
-                                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                                    textStyle = MaterialTheme.typography.bodyLarge,
-                                    trailingIcon = if (searchInput.isNotEmpty()) {
-                                        { IconButton(onClick = { searchInput = ""; message = null }) { Icon(Icons.Filled.Clear, contentDescription = "Eingabe löschen") } }
-                                    } else null,
-                                    shape = RoundedCornerShape(28.dp),
+                                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = if (isSearching) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f) else MaterialTheme.colorScheme.onSurface),
+                                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                                    interactionSource = searchInteraction,
                                     // Enter on a hardware keyboard searches instead of adding a line break;
                                     // the field stays multi-line to show recognised text.
-                                    modifier = Modifier.fillMaxWidth().onFocusChanged { searchFocused = it.isFocused }.onPreviewKeyEvent { event ->
+                                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).onFocusChanged { searchFocused = it.isFocused }.onPreviewKeyEvent { event ->
                                         if (event.key == Key.Enter || event.key == Key.NumPadEnter) {
-                                            if (event.type == KeyEventType.KeyUp) {
-                                                if (showSoldBooks) keyboard?.hide() else if (searchInput.isNotBlank()) submitInput(searchInput)
-                                            }
+                                            if (event.type == KeyEventType.KeyUp) onSearchAction()
                                             true
                                         } else false
                                     },
                                     enabled = !isSearching,
                                     maxLines = 3,
                                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                                    keyboardActions = KeyboardActions(onSearch = { if (showSoldBooks) keyboard?.hide() else if (searchInput.isNotBlank()) submitInput(searchInput) })
-                                )
+                                    keyboardActions = KeyboardActions(onSearch = { onSearchAction() })
+                                ) { innerTextField ->
+                                    OutlinedTextFieldDefaults.DecorationBox(
+                                        value = searchInput,
+                                        innerTextField = innerTextField,
+                                        enabled = !isSearching,
+                                        singleLine = false,
+                                        visualTransformation = VisualTransformation.None,
+                                        interactionSource = searchInteraction,
+                                        placeholder = { Text(if (showSoldBooks) "Verkaufte durchsuchen" else "ISBN oder Titel", maxLines = 1) },
+                                        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                                        trailingIcon = if (searchInput.isNotEmpty()) {
+                                            { IconButton(onClick = { searchInput = ""; message = null }) { Icon(Icons.Filled.Clear, contentDescription = "Eingabe löschen") } }
+                                        } else null,
+                                        colors = searchColors,
+                                        contentPadding = OutlinedTextFieldDefaults.contentPadding(top = 12.dp, bottom = 12.dp),
+                                        container = {
+                                            OutlinedTextFieldDefaults.Container(enabled = !isSearching, isError = false, interactionSource = searchInteraction,
+                                                colors = searchColors, shape = RoundedCornerShape(24.dp))
+                                        }
+                                    )
+                                }
+                            }
                             if (hasSearchInput && !showSoldBooks && !selectionMode) {
                                 val inputIsIsbn = BookInputFormat.parseIsbn(searchInput) != null
                                 val catalogSearch = searchInput.any(Char::isLetter) && !inputIsIsbn
-                                // Real buttons at the app's normal 48 dp height; the field stays fully visible above them.
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                // One row of real 48 dp buttons; from larger font sizes on, "Von Hand" moves to a
+                                // second row so no label is ever cut off.
+                                val oneRow = LocalDensity.current.fontScale < 1.15f
+                                val primary: @Composable RowScope.() -> Unit = {
                                     Button(
                                         onClick = { submitInput(searchInput) },
                                         enabled = !isSearching && searchInput.isNotBlank(),
-                                        modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+                                        modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                                     ) {
                                         Icon(if (catalogSearch) Icons.Filled.Search else Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(20.dp))
                                         Text(when { isSearching -> "Suche …"; catalogSearch -> "Im Katalog suchen"; else -> "ISBN hinzufügen" },
                                             modifier = Modifier.padding(start = 8.dp))
                                     }
                                     OutlinedButton(onClick = { openScanner(ScannerMode.AUTOMATIC) }, enabled = !isSearching,
-                                        modifier = Modifier.heightIn(min = 48.dp), contentPadding = PaddingValues(horizontal = 16.dp)) {
+                                        modifier = Modifier.heightIn(min = 48.dp), contentPadding = PaddingValues(horizontal = 14.dp)) {
                                         Icon(painterResource(R.drawable.ic_camera), contentDescription = "Kamera öffnen")
                                     }
                                 }
-                                if (catalogSearch) OutlinedButton(onClick = { manualEntry = BookEntity("", searchInput) }, enabled = !isSearching,
-                                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                                    Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(20.dp))
-                                    Text("Manuell erfassen", modifier = Modifier.padding(start = 8.dp))
+                                val manual: @Composable (Modifier) -> Unit = { mod ->
+                                    OutlinedButton(onClick = { manualEntry = BookEntity("", searchInput) }, enabled = !isSearching,
+                                        modifier = mod.heightIn(min = 48.dp).semantics { contentDescription = "Buch von Hand eintragen" },
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)) {
+                                        Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(20.dp))
+                                        Text(if (oneRow) "Von Hand" else "Von Hand eintragen", modifier = Modifier.padding(start = 6.dp))
+                                    }
                                 }
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    primary()
+                                    if (catalogSearch && oneRow) manual(Modifier)
+                                }
+                                if (catalogSearch && !oneRow) manual(Modifier.fillMaxWidth())
                             }
                         }
 
@@ -1008,7 +1048,7 @@ class MainActivity : ComponentActivity() {
                     confirmButton = { TextButton(onClick = { session.shelfReview.discardAll(); discardShelfConfirm = false }) { Text("Verwerfen", color = colorScheme.error) } },
                     dismissButton = { TextButton(onClick = { discardShelfConfirm = false }) { Text("Abbrechen") } })
 
-                manualEntry?.let { draft -> EditBookDialog(draft, title = "Buch manuell erfassen", onDismiss = { manualEntry = null }) { isbnText, title, author ->
+                manualEntry?.let { draft -> EditBookDialog(draft, title = "Buch von Hand eintragen", onDismiss = { manualEntry = null }) { isbnText, title, author ->
                     val isbn = BookIdentity.canonicalIsbn(isbnText)
                     if (isbnText.isNotBlank() && isbn == null) "Bitte ISBN korrigieren oder leer lassen."
                     else if (title.isBlank()) "Bitte einen Titel eingeben."
