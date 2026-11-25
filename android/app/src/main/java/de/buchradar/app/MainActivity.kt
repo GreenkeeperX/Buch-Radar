@@ -2,6 +2,7 @@
 
 package de.buchradar.app
 
+import de.buchradar.app.ui.ActionButtonHeight
 import androidx.compose.ui.input.key.type
 
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -537,7 +538,7 @@ class MainActivity : ComponentActivity() {
                                     val ids = selectedVisibleIds.toList()
                                     exitSelection()
                                     if (showSoldBooks) restoreSold(ids) else markSold(ids)
-                                }, enabled = selectedVisibleIds.isNotEmpty(), modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                                }, enabled = selectedVisibleIds.isNotEmpty(), modifier = Modifier.fillMaxWidth().heightIn(min = ActionButtonHeight)) {
                                     Icon(painterResource(if (showSoldBooks) R.drawable.ic_books else R.drawable.ic_sold), contentDescription = null, modifier = Modifier.padding(end = 8.dp))
                                     Text(if (showSoldBooks) "Zurück in Meine Bücher (${selectedVisibleIds.size})" else "Als verkauft markieren (${selectedVisibleIds.size})")
                                 }
@@ -618,10 +619,10 @@ class MainActivity : ComponentActivity() {
                                         style = MaterialTheme.typography.bodyLarge)
                                     if (isSearching) LinearProgressIndicator(Modifier.fillMaxWidth())
                                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        Button(onClick = { session.shelfReview.pause(); shelfCorrectionQuery = null; openScanner(ScannerMode.SHELF) }, modifier = Modifier.weight(1f)) {
+                                        Button(onClick = { session.shelfReview.pause(); shelfCorrectionQuery = null; openScanner(ScannerMode.SHELF) }, modifier = Modifier.weight(1f).heightIn(min = ActionButtonHeight)) {
                                             Icon(painterResource(R.drawable.ic_camera), null, Modifier.padding(end = 8.dp)); Text("Weitere scannen")
                                         }
-                                        OutlinedButton(onClick = closeShelfReview) { Text("Zur Liste") }
+                                        OutlinedButton(modifier = Modifier.heightIn(min = ActionButtonHeight), onClick = closeShelfReview) { Text("Zur Liste") }
                                     }
                                     if (postponedCount > 0) TextButton(onClick = { session.shelfReview.restorePostponed() }) { Text("Zurückgestellte Funde ($postponedCount) weiterbearbeiten") }
                                     if (groups.any { it.error != null }) TextButton(onClick = { session.shelfReview.retryFailures() }) {
@@ -692,7 +693,7 @@ class MainActivity : ComponentActivity() {
                                                 keyboardActions = KeyboardActions(onSearch = { if (shelfEditText.isNotBlank()) correctShelfGroup(group.id, shelfEditText) })
                                             )
                                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                Button(onClick = { correctShelfGroup(group.id, shelfEditText) }, enabled = shelfEditText.isNotBlank(), modifier = Modifier.weight(1f)) { Text("Korrigiert suchen") }
+                                                Button(onClick = { correctShelfGroup(group.id, shelfEditText) }, enabled = shelfEditText.isNotBlank(), modifier = Modifier.weight(1f).heightIn(min = ActionButtonHeight)) { Text("Korrigiert suchen") }
                                                 TextButton(onClick = { shelfEditQuery = null }) { Text("Abbrechen") }
                                             }
                                         }
@@ -701,11 +702,11 @@ class MainActivity : ComponentActivity() {
                                                 session.shelfReview.pause()
                                                 shelfCorrectionQuery = group.id
                                                 openScanner(ScannerMode.SINGLE_BOOK)
-                                            }, modifier = Modifier.weight(1f)) { Icon(painterResource(R.drawable.ic_camera), null, Modifier.padding(end = 6.dp)); Text("Einzeln") }
+                                            }, modifier = Modifier.weight(1f).heightIn(min = ActionButtonHeight)) { Icon(painterResource(R.drawable.ic_camera), null, Modifier.padding(end = 6.dp)); Text("Einzeln") }
                                             OutlinedButton(onClick = {
                                                 shelfEditQuery = group.id
                                                 shelfEditText = group.query
-                                            }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.Edit, null, Modifier.padding(end = 6.dp)); Text("Text ändern") }
+                                            }, modifier = Modifier.weight(1f).heightIn(min = ActionButtonHeight)) { Icon(Icons.Filled.Edit, null, Modifier.padding(end = 6.dp)); Text("Text ändern") }
                                         }
                                         TextButton(onClick = {
                                             session.shelfReview.postpone(group.id)
@@ -757,7 +758,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedButton(onClick = { coverCandidates = emptyList(); submitInput(searchInput) }, enabled = searchInput.isNotBlank() && !isSearching, modifier = Modifier.weight(1f)) {
+                                OutlinedButton(onClick = { coverCandidates = emptyList(); submitInput(searchInput) }, enabled = searchInput.isNotBlank() && !isSearching, modifier = Modifier.weight(1f).heightIn(min = ActionButtonHeight)) {
                                     Icon(Icons.Filled.Search, null, Modifier.padding(end = 6.dp)); Text("Erneut suchen")
                                 }
                                 TextButton(onClick = { closeCandidates(); searchInput = "" }, modifier = Modifier.weight(1f)) { Text("Zurück zur Eingabe") }
@@ -819,17 +820,21 @@ class MainActivity : ComponentActivity() {
                                                 LinearProgressIndicator(progress = { if (momoxTotal > 0) momoxProgress / momoxTotal.toFloat() else 0f }, modifier = Modifier.fillMaxWidth())
                                                 checkRun?.pausedReason?.let { Text(it, color = colorScheme.error) }
                                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                    if (checkRun?.pausedReason != null) OutlinedButton(onClick = { scope.launch { catchingOperation { MomoxCheckCoordinator.resume(context) } } }) { Text("Erneut versuchen") }
+                                                    if (checkRun?.pausedReason != null) OutlinedButton(modifier = Modifier.heightIn(min = ActionButtonHeight), onClick = { scope.launch { catchingOperation { MomoxCheckCoordinator.resume(context) } } }) { Text("Erneut versuchen") }
                                                     TextButton(onClick = { scope.launch { catchingOperation { MomoxCheckCoordinator.cancel(context) } } }) { Text("Prüfung beenden") }
                                                 }
                                             }
-                                        } else if (!selectionMode) MomoxActionRow(
-                                            lastCheckedAt = checkRun?.finishedAt?.takeIf { checkRun?.pausedReason == null } ?: books.mapNotNull { it.lastCheckedAt }.maxOrNull(),
+                                        } else if (!selectionMode) {
+                                            val lastListCheck = checkRun?.finishedAt?.takeIf { checkRun?.pausedReason == null } ?: books.mapNotNull { it.lastCheckedAt }.maxOrNull()
+                                            MomoxActionRow(
+                                            lastCheckedAt = lastListCheck,
+                                            checkDue = momoxCheckDue(lastListCheck, books.any { it.isbn.isNotBlank() && it.lastCheckedAt == null }),
                                             errors = momoxSummary?.errors ?: 0,
                                             canCheck = books.isNotEmpty(),
                                             onShowErrors = { statusFilter = BookListQuery.FILTER_ERROR },
                                             onCheck = { momoxCheckDialogOpen = true }
                                         )
+                                        }
                                     }
                                     // Filter and sorting as two choice buttons on one line (wrapping only at large fonts);
                                     // the chips took two rows and made the header restless.
@@ -838,7 +843,7 @@ class MainActivity : ComponentActivity() {
                                     ) {
                                         if (!showSoldBooks) Box {
                                             val current = BookListQuery.filters.firstOrNull { it.first == statusFilter } ?: BookListQuery.filters.first()
-                                            OutlinedButton(onClick = { filterMenuOpen = true }, modifier = Modifier.heightIn(min = 48.dp),
+                                            OutlinedButton(onClick = { filterMenuOpen = true }, modifier = Modifier.heightIn(min = ActionButtonHeight),
                                                 contentPadding = PaddingValues(start = 14.dp, end = 8.dp)) {
                                                 Icon(painterResource(R.drawable.ic_filter), contentDescription = null, modifier = Modifier.size(18.dp).padding(end = 2.dp))
                                                 Text("${current.second} ${books.count { BookListQuery.matchesStatus(it, current.first) }}", maxLines = 1)
@@ -971,21 +976,23 @@ class MainActivity : ComponentActivity() {
                                     Button(
                                         onClick = { submitInput(searchInput) },
                                         enabled = !isSearching && searchInput.isNotBlank(),
-                                        modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                                        modifier = Modifier.weight(1f).heightIn(min = ActionButtonHeight),
                                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                                     ) {
                                         Icon(if (catalogSearch) Icons.Filled.Search else Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(20.dp))
                                         Text(when { isSearching -> "Suche …"; catalogSearch -> "Im Katalog suchen"; else -> "ISBN hinzufügen" },
                                             modifier = Modifier.padding(start = 8.dp))
                                     }
+                                }
+                                val camera: @Composable () -> Unit = {
                                     OutlinedButton(onClick = { openScanner(ScannerMode.AUTOMATIC) }, enabled = !isSearching,
-                                        modifier = Modifier.heightIn(min = 48.dp), contentPadding = PaddingValues(horizontal = 14.dp)) {
+                                        modifier = Modifier.heightIn(min = ActionButtonHeight), contentPadding = PaddingValues(horizontal = 14.dp)) {
                                         Icon(painterResource(R.drawable.ic_camera), contentDescription = "Kamera öffnen")
                                     }
                                 }
                                 val manual: @Composable (Modifier) -> Unit = { mod ->
                                     OutlinedButton(onClick = { manualEntry = BookEntity("", searchInput) }, enabled = !isSearching,
-                                        modifier = mod.heightIn(min = 48.dp).semantics { contentDescription = "Buch von Hand eintragen" },
+                                        modifier = mod.semantics { contentDescription = "Buch von Hand eintragen" }.heightIn(min = ActionButtonHeight),
                                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)) {
                                         Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(20.dp))
                                         Text(if (oneRow) "Von Hand" else "Von Hand eintragen", modifier = Modifier.padding(start = 6.dp))
@@ -994,6 +1001,7 @@ class MainActivity : ComponentActivity() {
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     primary()
                                     if (catalogSearch && oneRow) manual(Modifier)
+                                    camera()
                                 }
                                 if (catalogSearch && !oneRow) manual(Modifier.fillMaxWidth())
                             }
@@ -1019,7 +1027,7 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     } },
-                    confirmButton = { FilledTonalButton(onClick = {
+                    confirmButton = { FilledTonalButton(modifier = Modifier.heightIn(min = ActionButtonHeight), onClick = {
                         val now = System.currentTimeMillis()
                         val snapshot = when (momoxCheckMode) {
                             "new" -> books.filter { it.lastCheckedAt == null }
@@ -1106,6 +1114,6 @@ private fun EmptyState(title: String, text: String, action: Pair<String, () -> U
         }
         Text(title, style = MaterialTheme.typography.titleLarge, textAlign = TextAlign.Center)
         Text(text, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        action?.let { (label, onClick) -> OutlinedButton(onClick = onClick) { Text(label) } }
+        action?.let { (label, onClick) -> OutlinedButton(modifier = Modifier.heightIn(min = ActionButtonHeight), onClick = onClick) { Text(label) } }
     }
 }

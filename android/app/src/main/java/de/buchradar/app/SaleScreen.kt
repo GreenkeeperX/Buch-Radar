@@ -1,5 +1,6 @@
 package de.buchradar.app
 
+import de.buchradar.app.ui.ActionButtonHeight
 import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -97,7 +98,7 @@ fun SaleScreen(
                         .putExtra(Intent.EXTRA_TEXT, SaleList.shareText(chosen, System.currentTimeMillis()))
                     // A very long list can exceed what an intent may carry; say so instead of crashing.
                     shareFailed = runCatching { context.startActivity(Intent.createChooser(send, "Liste teilen")) }.isFailure
-                }, enabled = chosen.isNotEmpty(), modifier = modifier.heightIn(min = 52.dp)) {
+                }, enabled = chosen.isNotEmpty(), modifier = modifier.heightIn(min = ActionButtonHeight)) {
                     Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.padding(end = 8.dp)); Text("Teilen")
                 }
             }
@@ -105,7 +106,7 @@ fun SaleScreen(
                 Button(onClick = {
                     busy = true; conflict = false
                     onMarkSold(chosen.associate { it.id to BookListQuery.offeredCents(it) }) { outcome -> busy = false; conflict = outcome == false }
-                }, enabled = chosen.isNotEmpty() && !busy, modifier = modifier.heightIn(min = 52.dp)) {
+                }, enabled = chosen.isNotEmpty() && !busy, modifier = modifier.heightIn(min = ActionButtonHeight)) {
                     Icon(painterResource(R.drawable.ic_sold), contentDescription = null, modifier = Modifier.padding(end = 8.dp))
                     Text("Verkauft markieren")
                 }
@@ -140,7 +141,7 @@ fun SaleScreen(
                             else "$dropped gewählte Bücher sind nicht mehr dabei: kein aktuelles Angebot oder schon verkauft.",
                             style = MaterialTheme.typography.bodyMedium, color = scheme.error)
                         paused?.let { Text("Neuprüfung angehalten: $it", style = MaterialTheme.typography.bodyMedium, color = scheme.error) }
-                        if (stale.isNotEmpty()) FilledTonalButton(onClick = { onRecheck(stale) }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                        if (stale.isNotEmpty()) FilledTonalButton(onClick = { onRecheck(stale) }, modifier = Modifier.fillMaxWidth().heightIn(min = ActionButtonHeight)) {
                             Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
                             Text(if (stale.size == 1) "1 älteren Preis neu prüfen" else "${stale.size} ältere Preise neu prüfen")
                         }

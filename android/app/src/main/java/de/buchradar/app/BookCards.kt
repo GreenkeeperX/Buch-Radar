@@ -2,6 +2,7 @@
 
 package de.buchradar.app
 
+import de.buchradar.app.ui.ActionButtonHeight
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
@@ -108,7 +109,7 @@ internal fun ListOverview(title: String, totals: BookListTotals, showValue: Bool
                 Text("Ankauf für ${totals.availableCount} ${if (totals.availableCount == 1) "Buch" else "Bücher"}",
                     style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            if (onSell != null) FilledTonalButton(onClick = onSell, modifier = Modifier.padding(start = 8.dp).heightIn(min = 48.dp)) {
+            if (onSell != null) FilledTonalButton(onClick = onSell, modifier = Modifier.padding(start = 8.dp).heightIn(min = ActionButtonHeight)) {
                 Text("Verkaufen")
             }
         }
@@ -135,11 +136,15 @@ internal fun formatCheckedAt(millis: Long, now: Long = System.currentTimeMillis(
  * the overview and the filter; only errors of the last run get a link to the error filter.
  * Without any check yet a full-width button says what the check does.
  */
+/** A check is due (button look in the action row) with the same age rule as the sale list and check dialog, or when a book with ISBN was never checked. */
+fun momoxCheckDue(lastCheckedAt: Long?, hasUncheckedIsbn: Boolean, now: Long = System.currentTimeMillis()): Boolean =
+    hasUncheckedIsbn || lastCheckedAt == null || now - lastCheckedAt >= de.buchradar.app.domain.SaleList.STALE_AFTER_MILLIS
+
 @Composable
-internal fun MomoxActionRow(lastCheckedAt: Long?, errors: Int, canCheck: Boolean, onShowErrors: () -> Unit, onCheck: () -> Unit) {
+internal fun MomoxActionRow(lastCheckedAt: Long?, errors: Int, canCheck: Boolean, checkDue: Boolean, onShowErrors: () -> Unit, onCheck: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     if (lastCheckedAt == null) {
-        if (canCheck) FilledTonalButton(onClick = onCheck, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+        if (canCheck) FilledTonalButton(onClick = onCheck, modifier = Modifier.fillMaxWidth().heightIn(min = ActionButtonHeight)) {
             Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))
             Text("Ankaufpreise bei Momox prüfen")
@@ -153,11 +158,14 @@ internal fun MomoxActionRow(lastCheckedAt: Long?, errors: Int, canCheck: Boolean
                 Text(if (errors == 1) "1 Fehler" else "$errors Fehler", color = scheme.error)
             }
         }
-        if (canCheck) TextButton(onClick = onCheck, modifier = Modifier.heightIn(min = 48.dp)) {
+        val label: @Composable () -> Unit = {
             Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))
             Text("Momox prüfen")
         }
+        // Quiet link while the list is fresh; a real button once a check is due.
+        if (canCheck && checkDue) FilledTonalButton(onClick = onCheck, modifier = Modifier.heightIn(min = ActionButtonHeight)) { label() }
+        else if (canCheck) TextButton(onClick = onCheck, modifier = Modifier.heightIn(min = 48.dp)) { label() }
     }
 }
 
@@ -275,7 +283,7 @@ internal fun CandidateCard(candidate: CatalogBook, alreadyAdded: Boolean, isSold
                         values.forEach { value -> Text("$label: ${value.value} (${value.sources.joinToString()})", style = MaterialTheme.typography.bodyMedium) }
                     }
                 }
-                Button(onClick = onClick, enabled = !alreadyAdded, modifier = Modifier.fillMaxWidth()) {
+                Button(onClick = onClick, enabled = !alreadyAdded, modifier = Modifier.fillMaxWidth().heightIn(min = ActionButtonHeight)) {
                     Text(when { alreadyAdded -> "Bereits in Liste"; isSold -> "Zurück in meine Bücher"; candidate.isbn == null -> "Ohne ISBN erfassen"; else -> "Buch hinzufügen" })
                 }
             }
@@ -312,7 +320,7 @@ internal fun EditBookDialog(
             }
         },
         confirmButton = {
-            FilledTonalButton(enabled = !saving, onClick = {
+            FilledTonalButton(modifier = Modifier.heightIn(min = ActionButtonHeight), enabled = !saving, onClick = {
                 scope.launch {
                     saving = true
                     // A database failure must not crash the dialog; show it instead.

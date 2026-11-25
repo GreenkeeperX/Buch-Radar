@@ -1,5 +1,6 @@
 package de.buchradar.app
 
+import de.buchradar.app.ui.ActionButtonHeight
 import android.Manifest
 import android.os.Build
 import android.content.Context
@@ -91,7 +92,7 @@ fun SettingsScreen(theme: String, onTheme: (String) -> Unit, onClose: () -> Unit
                             val options = listOf("system" to "System", "light" to "Hell", "dark" to "Dunkel")
                             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                                 options.forEachIndexed { index, (key, label) ->
-                                    SegmentedButton(selected = (theme.takeIf { it == "light" || it == "dark" } ?: "system") == key,
+                                    SegmentedButton(modifier = Modifier.heightIn(min = ActionButtonHeight), selected = (theme.takeIf { it == "light" || it == "dark" } ?: "system") == key,
                                         onClick = { onTheme(key); prefs.edit().putString("theme", key).apply() },
                                         shape = SegmentedButtonDefaults.itemShape(index, options.size)) { Text(label) }
                                 }
@@ -117,8 +118,8 @@ fun SettingsScreen(theme: String, onTheme: (String) -> Unit, onClose: () -> Unit
                         }
                         item { HorizontalDivider(); de.buchradar.app.ui.SectionTitle("Datensicherung") }
                         item { Text("Die Sicherung enthält deine Bücher und den Verkaufsstatus. Angebote werden nach dem Import neu geprüft.") }
-                        item { OutlinedButton(onClick = { export.launch("buecher-radar.json") }, modifier = Modifier.fillMaxWidth()) { Text("Bücherliste sichern") } }
-                        item { OutlinedButton(onClick = { import.launch(arrayOf("application/json", "text/plain")) }, modifier = Modifier.fillMaxWidth()) { Text("Sicherung importieren") } }
+                        item { OutlinedButton(onClick = { export.launch("buecher-radar.json") }, modifier = Modifier.fillMaxWidth().heightIn(min = ActionButtonHeight)) { Text("Bücherliste sichern") } }
+                        item { OutlinedButton(onClick = { import.launch(arrayOf("application/json", "text/plain")) }, modifier = Modifier.fillMaxWidth().heightIn(min = ActionButtonHeight)) { Text("Sicherung importieren") } }
                         item { HorizontalDivider(); NavRow("Diagnose und Protokoll") { log = AppLog.read(context); page = "log" } }
                         item { NavRow("Datenschutz und Datenquellen") { page = "privacy" } }
                         item { Text("Bücher-Radar ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", Modifier.padding(top = 8.dp, bottom = 24.dp), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -126,10 +127,10 @@ fun SettingsScreen(theme: String, onTheme: (String) -> Unit, onClose: () -> Unit
                     "log" -> {
                         item { Text("Begrenztes lokales Protokoll ohne Kameraaufnahmen. Vor dem Weitergeben prüfen.") }
                         item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(onClick = { log = AppLog.read(context) }) { Text("Aktualisieren") }
+                            OutlinedButton(modifier = Modifier.heightIn(min = ActionButtonHeight), onClick = { log = AppLog.read(context) }) { Text("Aktualisieren") }
                             TextButton(onClick = { clearLog = true }) { Text("Leeren") }
                         } }
-                        item { OutlinedButton(onClick = { exportLog.launch("buecher-radar-diagnose.txt") }) { Text("Protokoll speichern") } }
+                        item { OutlinedButton(modifier = Modifier.heightIn(min = ActionButtonHeight), onClick = { exportLog.launch("buecher-radar-diagnose.txt") }) { Text("Protokoll speichern") } }
                         items(log.withIndex().toList(), key = { it.index }) { Text(it.value, style = MaterialTheme.typography.bodyMedium) }
                     }
                     "privacy" -> {
@@ -164,7 +165,7 @@ private fun SwitchRow(label: String, checked: Boolean, onChange: (Boolean) -> Un
 private fun ChoiceMenu(label: String, choices: List<Pair<String, String>>, onChange: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxWidth()) {
-        OutlinedButton(onClick = { open = true }, modifier = Modifier.fillMaxWidth()) {
+        OutlinedButton(onClick = { open = true }, modifier = Modifier.fillMaxWidth().heightIn(min = ActionButtonHeight)) {
             Text(label, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
             Icon(androidx.compose.material.icons.Icons.Filled.ArrowDropDown, contentDescription = null)
         }

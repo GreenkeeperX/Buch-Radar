@@ -1,5 +1,6 @@
 package de.buchradar.app.scanner
 
+import de.buchradar.app.ui.ActionButtonHeight
 import android.graphics.Bitmap
 import android.graphics.Matrix
 import android.os.SystemClock
@@ -117,7 +118,7 @@ fun BookScannerView(
             Button(
                 onClick = confirm,
                 enabled = !finalizing && observed.isNotBlank(),
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = ActionButtonHeight),
                 colors = ButtonDefaults.buttonColors(
                     disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                     disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant
@@ -333,7 +334,7 @@ private fun ScannerModeBar(mode: ScannerMode, onModeChange: (ScannerMode) -> Uni
                     onClick = { onModeChange(choice) },
                     enabled = enabled,
                     shape = SegmentedButtonDefaults.itemShape(index, modes.size),
-                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp).heightIn(min = ActionButtonHeight)
                 ) { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             }
         }

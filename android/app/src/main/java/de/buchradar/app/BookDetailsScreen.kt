@@ -2,6 +2,7 @@
 
 package de.buchradar.app
 
+import de.buchradar.app.ui.ActionButtonHeight
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -117,12 +118,12 @@ fun BookDetailsScreen(
                             onClick = { scope.launch {
                                 message = if (catchingOperation { MomoxCheckCoordinator.enqueue(context, listOf(book)) }.isSuccess) "Prüfung eingereiht. Das Ergebnis erscheint hier." else "Prüfung konnte nicht gestartet werden."
                             } },
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f).heightIn(min = ActionButtonHeight)
                         ) {
                             Icon(Icons.Filled.Refresh, null, Modifier.padding(end = 6.dp))
                             Text(if (queued) "Wird geprüft …" else "Momox prüfen")
                         }
-                        OutlinedButton(enabled = !loading && book.isbn.isNotBlank(), modifier = Modifier.weight(1f), onClick = { scope.launch {
+                        OutlinedButton(enabled = !loading && book.isbn.isNotBlank(), modifier = Modifier.weight(1f).heightIn(min = ActionButtonHeight), onClick = { scope.launch {
                             loading = true
                             val result = catchingOperation {
                                 val report = CatalogAccess.report { BookCatalog.findByIsbn(book.isbn) }

@@ -148,3 +148,6 @@ fun MomoxStatusPill(book: BookEntity, modifier: Modifier = Modifier) {
 fun SectionTitle(text: String, modifier: Modifier = Modifier) {
     Text(text, modifier.padding(top = 8.dp), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
 }
+
+/** One visible minimum height (Material's 40 dp) for all filled, outlined, tonal and segmented buttons; touch targets stay 48 dp via minimumInteractiveComponentSize. */
+val ActionButtonHeight = androidx.compose.material3.ButtonDefaults.MinHeight
