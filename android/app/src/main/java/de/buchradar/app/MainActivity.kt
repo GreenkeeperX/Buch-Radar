@@ -22,7 +22,6 @@ import android.content.res.Configuration
 
 import android.Manifest
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -67,6 +66,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -139,7 +139,6 @@ import de.buchradar.app.domain.BookListQuery
 import de.buchradar.app.domain.catchingOperation
 import de.buchradar.app.network.BookCatalog
 import de.buchradar.app.network.CatalogAccess
-import de.buchradar.app.network.CoverImageMatcher
 import de.buchradar.app.scanner.BookScannerView
 import de.buchradar.app.scanner.ScannerMode
 import de.buchradar.app.ui.BuchRadarTheme
@@ -210,8 +209,6 @@ class MainActivity : ComponentActivity() {
                 var editingBook by session.editingBook
                 var deletingBook by session.deletingBook
                 var scannerOpen by session.scannerOpen
-                var coverFrame by session.coverFrame
-                var visualCoverTest by session.visualCoverTest
                 var coverCandidates by session.coverCandidates
                 var shelfReviewOpen by session.shelfReviewOpen
                 var discardShelfConfirm by remember { mutableStateOf(false) }
@@ -277,7 +274,7 @@ class MainActivity : ComponentActivity() {
                         if (outcome.isFailure) message = "Rückgängig machen fehlgeschlagen."
                     }
                 }
-                val submitInput: (String, Bitmap?) -> Unit = { rawInput, frame ->
+                val submitInput: (String) -> Unit = { rawInput ->
                     keyboard?.hide()
                     val isbn = BookInputFormat.parseIsbn(rawInput) ?: BookIdentity.unambiguousIsbn(rawInput)?.let(BookInputFormat::parseIsbn)
                     if (isbn != null) {
@@ -316,7 +313,6 @@ class MainActivity : ComponentActivity() {
                                     searchInput = ""
                                     statusFilter = BookListQuery.FILTER_ALL
                                     sortMode = BookListQuery.SORT_RECENT
-                                    coverFrame = null
                                     singleSearchBusy = false
                                     message = when {
                                         saved.getOrNull() == -1L -> "Dieses Buch ist bereits gespeichert."
@@ -334,12 +330,10 @@ class MainActivity : ComponentActivity() {
                     } else if (rawInput.any(Char::isLetter)) {
                         showSoldBooks = false
                         singleSearchBusy = true
-                        message = "Suche Titel, Autor und Cover …"
+                        message = "Suche nach Titel und Autor …"
                         scope.launch {
                             val result = catchingOperation {
-                                val report = CatalogAccess.report { BookCatalog.findByRecognizedText(rawInput) }
-                                val ranked = (frame ?: coverFrame)?.let { CoverImageMatcher.rank(context, it, report.value, visualOnly = visualCoverTest) } ?: report.value
-                                report.copy(value = ranked)
+                                CatalogAccess.report { BookCatalog.findByRecognizedText(rawInput) }
                             }
                             coverCandidates = result.getOrNull()?.value.orEmpty()
                             message = when {
@@ -419,8 +413,8 @@ class MainActivity : ComponentActivity() {
                     session.shelfReview.append(spines)
                     message = null
                 }
-                val correctShelfGroup: (String, String, Bitmap?) -> Unit = { groupId, text, frame ->
-                    session.shelfReview.correct(groupId, text, frame)
+                val correctShelfGroup: (String, String) -> Unit = { groupId, text ->
+                    session.shelfReview.correct(groupId, text)
                     shelfCorrectionQuery = null
                     shelfEditQuery = null
                     message = null
@@ -433,7 +427,7 @@ class MainActivity : ComponentActivity() {
                     shelfCorrectionQuery = null
                 }
                 val closeCandidates: () -> Unit = {
-                    coverCandidates = emptyList(); coverFrame = null; visualCoverTest = false
+                    coverCandidates = emptyList()
                 }
                 val visibleBooks = remember(books, soldBooks, showSoldBooks, statusFilter, sortMode, searchInput) {
                     // Status chips exist only for active books; a filter chosen there must not hide sold books.
@@ -571,37 +565,33 @@ class MainActivity : ComponentActivity() {
                                 val correctionTarget = shelfCorrectionQuery
                                 val parsed = BookInputFormat.parseIsbn(rawValue)
                                 scannerOpen = false
-                                if (correctionTarget != null) correctShelfGroup(correctionTarget, parsed?.toCompactString() ?: rawValue, null)
+                                if (correctionTarget != null) correctShelfGroup(correctionTarget, parsed?.toCompactString() ?: rawValue)
                                 else if (parsed == null) message = "Kein gültiger Buch-Barcode erkannt."
                                 else {
                                     shelfReviewOpen = false
                                     searchInput = parsed.toString()
-                                    submitInput(parsed.toString(), null)
+                                    submitInput(parsed.toString())
                                 }
                             },
-                            onTextConfirmed = { text, frame, isVisualTest ->
+                            onTextConfirmed = { text ->
                                 val isbn = BookIdentity.unambiguousIsbn(text)
                                 val correctionTarget = shelfCorrectionQuery
                                 AppLog.add(context, "OCR-Text übernommen (${text.length} Zeichen, ISBN=${isbn != null})")
                                 scannerOpen = false
                                 if (correctionTarget != null) {
-                                    correctShelfGroup(correctionTarget, isbn ?: text, frame)
+                                    correctShelfGroup(correctionTarget, isbn ?: text)
                                 } else {
                                     shelfReviewOpen = false
                                     searchInput = isbn?.let(BookInputFormat::autoFormatIsbn) ?: text
-                                    coverFrame = frame
-                                    visualCoverTest = isVisualTest
-                                    submitInput(searchInput, frame)
+                                    submitInput(searchInput)
                                 }
                             },
-                            onShelfConfirmed = { spines, image, warning ->
+                            onShelfConfirmed = { spines, warning ->
                                 AppLog.add(context, "Regal-OCR übernommen (${spines.size} Buchrücken)")
                                 shelfCorrectionQuery = null
                                 searchInput = ""
-                                coverFrame = null
                                 searchShelf(spines)
                                 message = warning
-                                image.recycle()
                             },
                             onClose = { scannerOpen = false; shelfCorrectionQuery = null; if (shelfReviewOpen) session.shelfReview.resume() }
                         )
@@ -690,10 +680,10 @@ class MainActivity : ComponentActivity() {
                                                 modifier = Modifier.fillMaxWidth(),
                                                 singleLine = true,
                                                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                                                keyboardActions = KeyboardActions(onSearch = { if (shelfEditText.isNotBlank()) correctShelfGroup(group.id, shelfEditText, null) })
+                                                keyboardActions = KeyboardActions(onSearch = { if (shelfEditText.isNotBlank()) correctShelfGroup(group.id, shelfEditText) })
                                             )
                                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                Button(onClick = { correctShelfGroup(group.id, shelfEditText, null) }, enabled = shelfEditText.isNotBlank(), modifier = Modifier.weight(1f)) { Text("Korrigiert suchen") }
+                                                Button(onClick = { correctShelfGroup(group.id, shelfEditText) }, enabled = shelfEditText.isNotBlank(), modifier = Modifier.weight(1f)) { Text("Korrigiert suchen") }
                                                 TextButton(onClick = { shelfEditQuery = null }) { Text("Abbrechen") }
                                             }
                                         }
@@ -725,10 +715,10 @@ class MainActivity : ComponentActivity() {
                                 modifier = Modifier.fillMaxWidth(),
                                 maxLines = 2,
                                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                                keyboardActions = KeyboardActions(onSearch = { if (searchInput.isNotBlank() && !isSearching) { coverCandidates = emptyList(); submitInput(searchInput, coverFrame) } })
+                                keyboardActions = KeyboardActions(onSearch = { if (searchInput.isNotBlank() && !isSearching) { coverCandidates = emptyList(); submitInput(searchInput) } })
                             )
                             message?.let { InfoBanner(it, onDismiss = { message = null }) }
-                            Text(if (visualCoverTest) "Cover-Test: Kandidaten werden nur nach dem visuellen Cover-Abgleich sortiert. Der Suchtext liefert weiterhin die Kandidaten." else "ISBN und Ausgabe vergleichen. Coverwerte sind ein zusätzlicher Hinweis, keine sichere Identifikation.",
+                            Text("ISBN und Ausgabe vergleichen.",
                                 style = MaterialTheme.typography.bodyMedium, color = colorScheme.onSurfaceVariant)
                             LazyColumn(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 items(coverCandidates, key = { it.candidateId }) { candidate ->
@@ -758,7 +748,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedButton(onClick = { coverCandidates = emptyList(); submitInput(searchInput, coverFrame) }, enabled = searchInput.isNotBlank() && !isSearching, modifier = Modifier.weight(1f)) {
+                                OutlinedButton(onClick = { coverCandidates = emptyList(); submitInput(searchInput) }, enabled = searchInput.isNotBlank() && !isSearching, modifier = Modifier.weight(1f)) {
                                     Icon(Icons.Filled.Search, null, Modifier.padding(end = 6.dp)); Text("Erneut suchen")
                                 }
                                 TextButton(onClick = { closeCandidates(); searchInput = "" }, modifier = Modifier.weight(1f)) { Text("Zurück zur Eingabe") }
@@ -919,12 +909,12 @@ class MainActivity : ComponentActivity() {
                             message?.let { InfoBanner(it, compact = true, onDismiss = { message = null }) }
                             if (!selectionMode) OutlinedTextField(
                                     value = searchInput,
-                                    onValueChange = { searchInput = it; coverFrame = null; visualCoverTest = false },
+                                    onValueChange = { searchInput = it },
                                     placeholder = { Text(if (showSoldBooks) "Verkaufte durchsuchen" else "ISBN oder Titel", maxLines = 1) },
                                     leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
                                     textStyle = MaterialTheme.typography.bodyLarge,
                                     trailingIcon = if (searchInput.isNotEmpty()) {
-                                        { IconButton(onClick = { searchInput = ""; coverFrame = null; message = null }) { Icon(Icons.Filled.Clear, contentDescription = "Eingabe löschen") } }
+                                        { IconButton(onClick = { searchInput = ""; message = null }) { Icon(Icons.Filled.Clear, contentDescription = "Eingabe löschen") } }
                                     } else null,
                                     shape = RoundedCornerShape(28.dp),
                                     // Enter on a hardware keyboard searches instead of adding a line break;
@@ -932,7 +922,7 @@ class MainActivity : ComponentActivity() {
                                     modifier = Modifier.fillMaxWidth().onFocusChanged { searchFocused = it.isFocused }.onPreviewKeyEvent { event ->
                                         if (event.key == Key.Enter || event.key == Key.NumPadEnter) {
                                             if (event.type == KeyEventType.KeyUp) {
-                                                if (showSoldBooks) keyboard?.hide() else if (searchInput.isNotBlank()) submitInput(searchInput, coverFrame)
+                                                if (showSoldBooks) keyboard?.hide() else if (searchInput.isNotBlank()) submitInput(searchInput)
                                             }
                                             true
                                         } else false
@@ -940,30 +930,31 @@ class MainActivity : ComponentActivity() {
                                     enabled = !isSearching,
                                     maxLines = 3,
                                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                                    keyboardActions = KeyboardActions(onSearch = { if (showSoldBooks) keyboard?.hide() else if (searchInput.isNotBlank()) submitInput(searchInput, coverFrame) })
+                                    keyboardActions = KeyboardActions(onSearch = { if (showSoldBooks) keyboard?.hide() else if (searchInput.isNotBlank()) submitInput(searchInput) })
                                 )
-                            if (hasSearchInput && !showSoldBooks && !selectionMode) FlowRow(
-                                Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                val hasLetters = searchInput.any(Char::isLetter)
-                                Button(
-                                    onClick = { submitInput(searchInput, coverFrame) },
-                                    enabled = !isSearching && searchInput.isNotBlank(),
-                                    modifier = Modifier.heightIn(min = 48.dp),
-                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-                                ) {
-                                    Text(when {
-                                        isSearching -> "Suche …"
-                                        hasLetters && BookInputFormat.parseIsbn(searchInput) == null -> "Im Katalog suchen"
-                                        else -> "ISBN hinzufügen"
-                                    })
+                            if (hasSearchInput && !showSoldBooks && !selectionMode) {
+                                val inputIsIsbn = BookInputFormat.parseIsbn(searchInput) != null
+                                val catalogSearch = searchInput.any(Char::isLetter) && !inputIsIsbn
+                                // Real buttons at the app's normal 48 dp height; the field stays fully visible above them.
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Button(
+                                        onClick = { submitInput(searchInput) },
+                                        enabled = !isSearching && searchInput.isNotBlank(),
+                                        modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+                                    ) {
+                                        Icon(if (catalogSearch) Icons.Filled.Search else Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(20.dp))
+                                        Text(when { isSearching -> "Suche …"; catalogSearch -> "Im Katalog suchen"; else -> "ISBN hinzufügen" },
+                                            modifier = Modifier.padding(start = 8.dp))
+                                    }
+                                    OutlinedButton(onClick = { openScanner(ScannerMode.AUTOMATIC) }, enabled = !isSearching,
+                                        modifier = Modifier.heightIn(min = 48.dp), contentPadding = PaddingValues(horizontal = 16.dp)) {
+                                        Icon(painterResource(R.drawable.ic_camera), contentDescription = "Kamera öffnen")
+                                    }
                                 }
-                                IconButton(onClick = { openScanner(ScannerMode.AUTOMATIC) }, enabled = !isSearching, modifier = Modifier.size(48.dp)) {
-                                    Icon(painterResource(R.drawable.ic_camera), contentDescription = "Kamera öffnen")
-                                }
-                                if (hasLetters) IconButton(onClick = { manualEntry = BookEntity("", searchInput) }, enabled = !isSearching, modifier = Modifier.size(48.dp)) {
-                                    Icon(Icons.Filled.Edit, contentDescription = "Buch manuell erfassen")
+                                if (catalogSearch) OutlinedButton(onClick = { manualEntry = BookEntity("", searchInput) }, enabled = !isSearching,
+                                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                                    Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(20.dp))
+                                    Text("Manuell erfassen", modifier = Modifier.padding(start = 8.dp))
                                 }
                             }
                         }
