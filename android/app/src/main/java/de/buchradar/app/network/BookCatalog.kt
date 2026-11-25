@@ -55,7 +55,9 @@ data class CatalogBook(
     val publisher: String? = null,
     val sourceId: String? = null,
     val fieldSources: Map<String, String> = emptyMap(),
-    val fieldValues: Map<String, List<CatalogFieldValue>> = emptyMap()
+    val fieldValues: Map<String, List<CatalogFieldValue>> = emptyMap(),
+    /** Set only by a cover confirmation of the photographed single book; never persisted as evidence. */
+    val coverConfirmed: Boolean = false
 ) {
     val conflictingFields: Set<String> get() = fieldValues.filterValues { it.size > 1 }.keys
     val candidateId: String get() = isbn?.let { "isbn:$it" } ?: sourceId

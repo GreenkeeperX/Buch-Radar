@@ -116,3 +116,7 @@ Bücher-Radar steht unter der GNU General Public License, Version 3
 (`GPL-3.0-only`). Der vollständige Lizenztext steht in [LICENSE](LICENSE).
 Bei Weitergabe veränderter Versionen muss der zugehörige Quellcode unter dieser
 Lizenz zugänglich sein. Private Änderungen müssen nicht veröffentlicht werden.
+
+Verwendete Bibliothek mit eigenem Lizenzhinweis: [OpenCV](https://opencv.org)
+(Apache License 2.0, GPL-3.0-kompatibel) für die Cover-Bestätigung (ORB-Merkmale
+und RANSAC-Homographie, nur auf dem Gerät).

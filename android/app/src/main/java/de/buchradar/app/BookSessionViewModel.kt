@@ -22,6 +22,13 @@ class BookSessionViewModel(application: Application) : AndroidViewModel(applicat
     val editingBook = mutableStateOf<BookEntity?>(null)
     val scannerOpen = mutableStateOf(false)
     val coverCandidates = mutableStateOf<List<de.buchradar.app.network.CatalogBook>>(emptyList())
+    /** Camera frame of a single book for the next catalog search only; memory only, never saved. */
+    private var coverFrame: android.graphics.Bitmap? = null
+    fun offerCoverFrame(frame: android.graphics.Bitmap?) { coverFrame?.takeIf { it !== frame }?.recycle(); coverFrame = frame }
+    /** Hands the frame to the caller, who then owns and recycles it. */
+    fun takeCoverFrame(): android.graphics.Bitmap? = coverFrame.also { coverFrame = null }
+    var coverJob: kotlinx.coroutines.Job? = null
+    override fun onCleared() { coverJob?.cancel(); offerCoverFrame(null); super.onCleared() }
     val shelfReviewOpen = mutableStateOf(false)
     val shelfReview = ShelfReviewController(viewModelScope,
         AtomicShelfReviewStore(File(application.noBackupFilesDir, "shelf-review.json"))) { text ->

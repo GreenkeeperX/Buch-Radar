@@ -271,6 +271,8 @@ internal fun CandidateCard(candidate: CatalogBook, alreadyAdded: Boolean, isSold
                     }
                     StatusPill(label, container, content)
                 }
+                // Only ever a positive hint: the photographed cover shows this edition's design.
+                if (candidate.coverConfirmed) StatusPill("Cover passt zu deinem Foto", status.successContainer, status.onSuccessContainer)
                 var showSources by rememberSaveable(candidate.candidateId) { mutableStateOf(false) }
                 if (candidate.sources.isNotEmpty()) TextButton(onClick = { showSources = !showSources }, contentPadding = ButtonDefaults.TextButtonContentPadding) {
                     if (candidate.conflictingFields.isNotEmpty()) Icon(Icons.Filled.Warning, null, tint = scheme.tertiary, modifier = Modifier.size(18.dp).padding(end = 4.dp))

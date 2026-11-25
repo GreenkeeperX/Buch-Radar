@@ -236,3 +236,17 @@ nach Messung an freigegebenen Scanbeispielen als bestätigt.
 - Lizenzentscheidung: GPL-3.0-only. Eine dauerhafte Release-Signierungsidentität
   ist vor produktiver Verteilung einzurichten. Vorabversionen sind als
   debug-signierte Test-APKs ohne vorkonfigurierten Momox-Zugang gekennzeichnet.
+
+## Cover-Bestätigung (Branch claude/cover-orb)
+
+- Nur Bestätigung „Cover passt zu deinem Foto“, nie Abwertung oder Ausblenden. Ein bestätigter
+  Kandidat rückt nur vor andere Ausgaben desselben Titels.
+- Nur hinter `coverEvidenceAllowed` (Modus Buch oder Automatik mit stabil erkanntem Einzelbuch),
+  nie Regal oder Regal-Korrektur. Das Kamerabild (max. 1000 px) bleibt im Speicher und wird nach
+  dem Vergleich verworfen.
+- OpenCV ORB (1500 Merkmale, Höhe 600 px, Ratio 0,75) plus RANSAC-Homographie (5 px), Schwelle
+  100 Inlier, höchstens 10 Kandidaten, Zeitlimit 8 s, abbrechbar.
+- Messung an lokalen Cover-Fotos (nicht im Repo): offline und auf dem Gerät keine Bestätigung
+  einer falschen Ausgabe oder eines anderen Buchs; Grenzen: Wirkung nur, wenn der Katalog ein Cover
+  derselben Gestaltung liefert. Opt-in-Messung: `CoverBenchmarkTest` mit `-e coverBenchmark true`.
+- Die App enthält nur noch arm64-v8a-Bibliotheken; OpenCV kostet etwa 24 MB in der APK.

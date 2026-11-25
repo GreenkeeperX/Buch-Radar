@@ -60,7 +60,8 @@ import kotlin.math.abs
 @OptIn(ExperimentalCoroutinesApi::class)
 fun BookScannerView(
     onBarcode: (String) -> Unit,
-    onTextConfirmed: (String) -> Unit,
+    /** Recognised text and, only when cover evidence is allowed, a small in-memory frame copy the receiver must recycle. */
+    onTextConfirmed: (String, Bitmap?) -> Unit,
     onShelfConfirmed: (List<String>, String?) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
@@ -278,7 +279,11 @@ fun BookScannerView(
                                     }
                                     AppLog.add(context, "Regal: ${separated?.regions ?: 0} Bildregionen, ${selected.size} Texte, Zeitlimit=${separated?.exhausted ?: false}")
                                     shelfCallback(selected, warning)
-                                } else textCallback(text)
+                                } else {
+                                    // Cover confirmation only for a single book in focus, never for shelves.
+                                    val coverAllowed = coverEvidenceAllowed(actualMode, detectedSingleCover = shelfVotes <= -2, shelfCorrection = false)
+                                    textCallback(text, if (coverAllowed) coverCopy(image) else null)
+                                }
                             }
                         }
                     } catch (cancelled: CancellationException) { throw cancelled }
@@ -452,3 +457,10 @@ internal fun unrotatePiece(piece: OcrPiece, degrees: Int, width: Int, height: In
     while (angle < -180) angle += 360
     return piece.copy(left = points.minOf { it.first }, right = points.maxOf { it.first }, top = points.minOf { it.second }, bottom = points.maxOf { it.second }, angle = angle)
 }
+
+/** Small copy for cover confirmation (max. 1000 px side); the analysis frame itself is recycled. */
+private fun coverCopy(image: Bitmap): Bitmap? = runCatching {
+    val scale = minOf(1f, 1000f / maxOf(image.width, image.height))
+    Bitmap.createScaledBitmap(image, (image.width * scale).toInt().coerceAtLeast(1), (image.height * scale).toInt().coerceAtLeast(1), true)
+        .let { if (it === image) image.copy(Bitmap.Config.ARGB_8888, false) else it }
+}.getOrNull()

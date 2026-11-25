@@ -152,6 +152,8 @@ import de.buchradar.app.network.BookCatalog
 import de.buchradar.app.network.CatalogAccess
 import de.buchradar.app.scanner.BookScannerView
 import de.buchradar.app.scanner.ScannerMode
+import de.buchradar.app.cover.CoverConfirmation
+import de.buchradar.app.cover.CoverVerifier
 import de.buchradar.app.ui.BuchRadarTheme
 import de.buchradar.app.ui.InfoBanner
 import kotlinx.coroutines.launch
@@ -342,11 +344,22 @@ class MainActivity : ComponentActivity() {
                         showSoldBooks = false
                         singleSearchBusy = true
                         message = "Suche nach Titel und Autor …"
+                        // A camera frame belongs to this one search; typed searches have none.
+                        val frame = session.takeCoverFrame()
+                        session.coverJob?.cancel()
                         scope.launch {
                             val result = catchingOperation {
                                 CatalogAccess.report { BookCatalog.findByRecognizedText(rawInput) }
                             }
                             coverCandidates = result.getOrNull()?.value.orEmpty()
+                            val found = coverCandidates
+                            if (frame != null && found.isNotEmpty()) session.coverJob = scope.launch {
+                                try {
+                                    val confirmed = catchingOperation { CoverVerifier.confirm(context, frame, found) }.getOrDefault(emptySet())
+                                    // A newer search replaced the list meanwhile: keep the newer one untouched.
+                                    if (coverCandidates === found) coverCandidates = CoverConfirmation.apply(found, confirmed)
+                                } finally { frame.recycle() }
+                            } else frame?.recycle()
                             message = when {
                                 result.isFailure -> "Buchkatalog nicht erreichbar. Bitte Internetverbindung prüfen."
                                 result.getOrNull()?.warnings?.isNotEmpty() == true -> result.getOrNull()?.warnings?.joinToString("\n")
@@ -584,16 +597,19 @@ class MainActivity : ComponentActivity() {
                                     submitInput(parsed.toString())
                                 }
                             },
-                            onTextConfirmed = { text ->
+                            onTextConfirmed = { text, frame ->
                                 val isbn = BookIdentity.unambiguousIsbn(text)
                                 val correctionTarget = shelfCorrectionQuery
                                 AppLog.add(context, "OCR-Text übernommen (${text.length} Zeichen, ISBN=${isbn != null})")
                                 scannerOpen = false
                                 if (correctionTarget != null) {
+                                    // Shelf corrections never use cover evidence.
+                                    frame?.recycle()
                                     correctShelfGroup(correctionTarget, isbn ?: text)
                                 } else {
                                     shelfReviewOpen = false
                                     searchInput = isbn?.let(BookInputFormat::autoFormatIsbn) ?: text
+                                    session.offerCoverFrame(if (isbn == null) frame else frame?.let { it.recycle(); null })
                                     submitInput(searchInput)
                                 }
                             },
@@ -929,7 +945,7 @@ class MainActivity : ComponentActivity() {
                                 val onSearchAction = { if (showSoldBooks) keyboard?.hide() else if (searchInput.isNotBlank()) submitInput(searchInput) }
                                 BasicTextField(
                                     value = searchInput,
-                                    onValueChange = { searchInput = it },
+                                    onValueChange = { searchInput = it; session.offerCoverFrame(null) },
                                     textStyle = MaterialTheme.typography.bodyLarge.copy(color = if (isSearching) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f) else MaterialTheme.colorScheme.onSurface),
                                     cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                                     interactionSource = searchInteraction,
