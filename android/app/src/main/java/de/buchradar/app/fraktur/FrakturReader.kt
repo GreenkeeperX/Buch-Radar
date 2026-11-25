@@ -25,13 +25,16 @@ object FrakturReader {
     private val models = listOf("deu_latf", "deu", "deu_fast")
 
     /** Text of the title area with both models, or null when unavailable, cancelled or out of time. */
-    suspend fun read(context: Context, frame: Bitmap, budgetMillis: Long = 8_000): String? = withContext(Dispatchers.Default) {
+    suspend fun read(context: Context, frame: Bitmap, budgetMillis: Long = 8_000, centreFallback: Boolean = false): String? = withContext(Dispatchers.Default) {
         val started = SystemClock.elapsedRealtime()
         // The budget includes model preparation; without a located title area nothing is read or searched.
         val result = withTimeoutOrNull(budgetMillis) {
             val dataPath = prepareModels(context) ?: return@withTimeoutOrNull null
             coroutineContext.ensureActive()
-            val area = titleArea(dataPath, frame) ?: return@withTimeoutOrNull null
+            // An explicit photo of one book may use its centre when no title words are located;
+            // automatic readings never fall back, so no background text reaches the catalog.
+            val area = titleArea(dataPath, frame) ?: (if (centreFallback) FrakturFallback.centreRect(frame.width, frame.height)
+                .let { Bitmap.createBitmap(frame, it.left, it.top, it.width(), it.height()) } else null) ?: return@withTimeoutOrNull null
             try {
                 val texts = mutableListOf<String>()
                 for (language in listOf("deu_latf", "deu")) {

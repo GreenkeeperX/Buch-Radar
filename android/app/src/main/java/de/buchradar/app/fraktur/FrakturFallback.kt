@@ -26,4 +26,16 @@ object FrakturFallback {
             (big.maxOf { it.right } + pad).coerceAtMost(width), (big.maxOf { it.bottom } + pad).coerceAtMost(height))
         return rect.takeIf { it.width() > 8 && it.height() > 8 }
     }
+
+    /** Seconds of a steady, sharp camera image without readable text before "Alte Schrift lesen" is offered. */
+    const val OFFER_AFTER_MILLIS = 3_000L
+
+    /** The camera offers an old-script reading only in Buch mode, never in a shelf correction or shelf scan. */
+    fun offerInCamera(mode: de.buchradar.app.scanner.ScannerMode, correcting: Boolean, blankSteadyForMillis: Long?): Boolean =
+        mode == de.buchradar.app.scanner.ScannerMode.SINGLE_BOOK && !correcting &&
+            blankSteadyForMillis != null && blankSteadyForMillis >= OFFER_AFTER_MILLIS
+
+    /** Central part of a photo of one book (80 % width, middle 60 % height). */
+    fun centreRect(width: Int, height: Int): Rect =
+        Rect((width * 0.1).toInt(), (height * 0.2).toInt(), (width * 0.9).toInt().coerceAtLeast(1), (height * 0.8).toInt().coerceAtLeast(1))
 }

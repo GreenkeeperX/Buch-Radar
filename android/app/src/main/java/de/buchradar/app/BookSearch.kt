@@ -31,7 +31,7 @@ internal class BookSearch(
     /** Candidate ids whose cover matches the photographed single book (see CoverVerifier). */
     private val confirmCovers: suspend (Bitmap, List<CatalogBook>) -> Set<String> = { _, _ -> emptySet() },
     /** Title text read with the old-script models (see FrakturReader), or null. */
-    private val readOldScript: suspend (Bitmap) -> String? = { null }
+    private val readOldScript: suspend (Bitmap, Boolean) -> String? = { _, _ -> null }
 ) {
     val input = mutableStateOf("")
     val showSold = mutableStateOf(false)
@@ -68,7 +68,7 @@ internal class BookSearch(
     private fun releaseShownFrame() { shownFrame?.recycle(); shownFrame = null; oldScriptAvailable = false }
 
     /** The running old-script reading only; cancelling it keeps the search, its first result and message. */
-    private var reading: kotlinx.coroutines.Deferred<List<CatalogBook>?>? = null
+    private var reading: kotlinx.coroutines.Job? = null
 
     /** Stops a running old-script reading; the candidates found so far and their cover check stay. */
     fun cancelOldScript() {
@@ -109,7 +109,7 @@ internal class BookSearch(
         val previous = message.value
         message.value = OLD_SCRIPT_PROGRESS
         val child = async {
-            val text = catchingOperation { readOldScript(frame) }.getOrNull()
+            val text = catchingOperation { readOldScript(frame, false) }.getOrNull()
             if (text.isNullOrBlank() || id != requestId) return@async null
             val again = catchingOperation { byTitle(text) }.getOrNull()?.value.orEmpty()
             again.takeIf { list -> list.any { (it.textSimilarity ?: 0) >= FrakturFallback.FITTING_SIMILARITY } }
@@ -121,6 +121,54 @@ internal class BookSearch(
         } finally {
             reading = null
             if (message.value == OLD_SCRIPT_PROGRESS) message.value = previous
+        }
+    }
+
+    /**
+     * Camera photo of one book whose lettering the normal recognition could not read: read it with the
+     * old-script models, then search like typed text. Owns and recycles [frame]; nothing is searched without text.
+     */
+    fun readPhoto(frame: Bitmap) {
+        leave()
+        showSold.value = false
+        busy = true
+        val id = requestId
+        job = scope.launch(start = kotlinx.coroutines.CoroutineStart.ATOMIC) {
+            try {
+                if (id != requestId) return@launch
+                message.value = OLD_SCRIPT_PROGRESS
+                val child = async { catchingOperation { readOldScript(frame, true) }.getOrNull()?.trim().orEmpty() }
+                reading = child
+                child.join()
+                reading = null
+                val text = if (child.isCancelled) "" else child.await()
+                if (id != requestId) return@launch
+                if (text.none(Char::isLetter)) {
+                    message.value = if (child.isCancelled) null else "Keine Schrift erkannt. Bitte näher heran oder „Von Hand“ eintragen."
+                    return@launch
+                }
+                input.value = text
+                message.value = "Suche nach Titel und Autor …"
+                val result = catchingOperation { byTitle(text) }
+                if (id != requestId) return@launch
+                candidates = result.getOrNull()?.value.orEmpty()
+                message.value = when {
+                    result.isFailure -> "Buchkatalog nicht erreichbar. Bitte Internetverbindung prüfen."
+                    result.getOrNull()?.warnings?.isNotEmpty() == true -> result.getOrThrow().warnings.joinToString("\n")
+                    candidates.isEmpty() -> "Keine passenden Treffer gefunden. Prüfe den Text oder erfasse das Buch von Hand."
+                    else -> null
+                }
+                val found = candidates
+                busy = false
+                if (found.isNotEmpty()) {
+                    val confirmed = catchingOperation { confirmCovers(frame, found) }.getOrDefault(emptySet())
+                    if (id == requestId && candidates === found) candidates = CoverConfirmation.apply(found, confirmed)
+                }
+            } finally {
+                reading = null
+                frame.recycle()
+                if (id == requestId) busy = false
+            }
         }
     }
 

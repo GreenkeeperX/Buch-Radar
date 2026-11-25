@@ -66,13 +66,18 @@ fun BookScannerView(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
     initialMode: ScannerMode = ScannerMode.AUTOMATIC,
-    correction: ShelfScanCorrection? = null
+    correction: ShelfScanCorrection? = null,
+    /** Photo of one book without readable text for the old-script reader; the receiver owns and recycles it. */
+    onOldScriptPhoto: ((Bitmap) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
     val barcodeCallback by rememberUpdatedState(onBarcode)
     val textCallback by rememberUpdatedState(onTextConfirmed)
     val shelfCallback by rememberUpdatedState(onShelfConfirmed)
+    val oldScriptCallback by rememberUpdatedState(onOldScriptPhoto)
+    var oldScriptOffer by remember { mutableStateOf(false) }
+    val oldScriptRequested = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
     val preview = remember { PreviewView(context).apply { scaleType = PreviewView.ScaleType.FIT_START; implementationMode = PreviewView.ImplementationMode.COMPATIBLE } }
     var mode by rememberSaveable(initialMode, correction?.groupId) {
         mutableStateOf(if (correction == null) initialMode else ScannerMode.SINGLE_BOOK)
@@ -89,6 +94,8 @@ fun BookScannerView(
     ScannerLayout(
         mode = mode, correcting = correction != null, hint = hint, observed = observed,
         shelf = shelf, finalizing = finalizing, modifier = modifier,
+        oldScriptOffer = oldScriptOffer && onOldScriptPhoto != null,
+        onOldScript = { oldScriptRequested.set(true) },
         onConfirm = { selection.current?.manualText?.set(foldOcr(observed)) },
         onModeChange = {
             if (selection.select(it)) {
@@ -116,6 +123,7 @@ fun BookScannerView(
         var lastTextAt = 0L
         var shelfVotes = 0
         var singleVotes = 0
+        var blankSince: Long? = null
         var sampleCount = 0
         var priorGeneration: ScanGeneration? = null
         var publishKey = ""
@@ -157,6 +165,7 @@ fun BookScannerView(
                             stability.reset()
                             shelfVotes = 0
                             singleVotes = 0
+                            blankSince = null
                             rotatedPieces = emptyList()
                             previousSample = null
                             publishKey = ""
@@ -227,10 +236,26 @@ fun BookScannerView(
                         if (currentKey == publishKey || isShelf && wordOverlap(currentKey, publishKey) >= .5f) publishCount++ else publishCount = 1
                         publishKey = currentKey
                         val shouldPublish = text.isNotBlank() && publishCount >= 2
+                        // A steady, sharp image without any readable text: offer the old-script reader in Buch mode.
+                        blankSince = if (text.isBlank() && steady && edges > 2.0) (blankSince ?: lastAt) else null
+                        val offerOldScript = de.buchradar.app.fraktur.FrakturFallback.offerInCamera(actualMode,
+                            selection.correctionGroupId != null, blankSince?.let { lastAt - it })
+                        if (!offerOldScript) oldScriptRequested.set(false)
+                        if (offerOldScript && oldScriptRequested.getAndSet(false) && frame.delivered.compareAndSet(false, true)) {
+                            var photo = coverCopy(image)
+                            try {
+                                withContext(Dispatchers.Main) {
+                                    val handed = photo
+                                    if (selection.current === frame && handed != null) { photo = null; oldScriptCallback?.invoke(handed) }
+                                }
+                            } finally { photo?.recycle() }
+                            return@launch
+                        }
                         sampleCount++
                         if (sampleCount % 10 == 0) AppLog.add(context, "Kamera: ${width}×$height, ${groups.size} Textregionen, Bewegung=${difference.toInt()}, Konturen=${edges.toInt()}")
                         withContext(Dispatchers.Main) {
                             if (selection.current !== frame || frame.delivered.get()) return@withContext
+                            oldScriptOffer = offerOldScript
                             if (shouldPublish || ready) {
                                 shelf = isShelf
                                 observed = text
@@ -347,7 +372,8 @@ class ShelfScanCorrection(val groupId: String, val confirm: (String, String) -> 
 internal fun ScannerLayout(
     mode: ScannerMode, correcting: Boolean, hint: String, observed: String, shelf: Boolean,
     finalizing: Boolean, onConfirm: () -> Unit, onModeChange: (ScannerMode) -> Unit, onClose: () -> Unit,
-    modifier: Modifier = Modifier, panelModifier: Modifier = Modifier, preview: @Composable () -> Unit
+    modifier: Modifier = Modifier, panelModifier: Modifier = Modifier, oldScriptOffer: Boolean = false,
+    onOldScript: () -> Unit = {}, preview: @Composable () -> Unit
 ) {
     val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     BoxWithConstraints(modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).safeDrawingPadding().background(Color.Black)) {
@@ -371,6 +397,10 @@ internal fun ScannerLayout(
                             )) {
                             Text(if (finalizing) "Buchrücken werden gelesen …" else if (shelf) "Buchrücken jetzt lesen" else "Jetzt suchen")
                         }
+                        if (oldScriptOffer && !finalizing && observed.isBlank())
+                            OutlinedButton(onClick = onOldScript, modifier = Modifier.fillMaxWidth().heightIn(min = de.buchradar.app.ui.ImportantButtonHeight)) {
+                                Text("Alte Schrift lesen")
+                            }
                         ScannerModeBar(mode, onModeChange, !finalizing && !correcting, onClose)
                     }
                 }

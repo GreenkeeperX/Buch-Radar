@@ -15,7 +15,7 @@ import java.io.File
 class BookSessionViewModel(application: Application) : AndroidViewModel(application) {
     internal val search = BookSearch(viewModelScope,
         confirmCovers = { frame, books -> de.buchradar.app.cover.CoverVerifier.confirm(application, frame, books) },
-        readOldScript = { frame -> de.buchradar.app.fraktur.FrakturReader.read(application, frame) })
+        readOldScript = { frame, centre -> de.buchradar.app.fraktur.FrakturReader.read(application, frame, centreFallback = centre) })
     override fun onCleared() { search.leave(); super.onCleared() }
     val detailsBook = mutableStateOf<BookEntity?>(null)
     val manualEntry = mutableStateOf<BookEntity?>(null)

@@ -534,6 +534,14 @@ class MainActivity : ComponentActivity() {
                                 // The search owns the frame from here on and releases it on every path.
                                 search.submit(action, books, soldBooks, frame, dao::insert)
                             },
+                            onOldScriptPhoto = { photo ->
+                                AppLog.add(context, "Foto für alte Schrift übernommen")
+                                scannerOpen = false
+                                shelfReviewOpen = false
+                                searchInput = ""
+                                // The search owns the photo from here on and releases it on every path.
+                                search.readPhoto(photo)
+                            },
                             onShelfConfirmed = { spines, warning ->
                                 AppLog.add(context, "Regal-OCR übernommen (${spines.size} Buchrücken)")
                                 searchInput = ""
