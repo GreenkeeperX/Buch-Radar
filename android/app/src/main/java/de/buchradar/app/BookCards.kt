@@ -3,6 +3,7 @@
 package de.buchradar.app
 
 import de.buchradar.app.ui.ActionButtonHeight
+import de.buchradar.app.ui.ImportantButtonHeight
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
@@ -144,7 +145,7 @@ fun momoxCheckDue(lastCheckedAt: Long?, hasUncheckedIsbn: Boolean, now: Long = S
 internal fun MomoxActionRow(lastCheckedAt: Long?, errors: Int, canCheck: Boolean, checkDue: Boolean, onShowErrors: () -> Unit, onCheck: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
     if (lastCheckedAt == null) {
-        if (canCheck) FilledTonalButton(onClick = onCheck, modifier = Modifier.fillMaxWidth().heightIn(min = ActionButtonHeight)) {
+        if (canCheck) FilledTonalButton(onClick = onCheck, modifier = Modifier.fillMaxWidth().heightIn(min = ImportantButtonHeight)) {
             Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))
             Text("Ankaufpreise bei Momox prüfen")
@@ -164,7 +165,7 @@ internal fun MomoxActionRow(lastCheckedAt: Long?, errors: Int, canCheck: Boolean
             Text("Momox prüfen")
         }
         // Quiet link while the list is fresh; a real button once a check is due.
-        if (canCheck && checkDue) FilledTonalButton(onClick = onCheck, modifier = Modifier.heightIn(min = ActionButtonHeight)) { label() }
+        if (canCheck && checkDue) FilledTonalButton(onClick = onCheck, modifier = Modifier.heightIn(min = ImportantButtonHeight)) { label() }
         else if (canCheck) TextButton(onClick = onCheck, modifier = Modifier.heightIn(min = 48.dp)) { label() }
     }
 }
@@ -283,7 +284,7 @@ internal fun CandidateCard(candidate: CatalogBook, alreadyAdded: Boolean, isSold
                         values.forEach { value -> Text("$label: ${value.value} (${value.sources.joinToString()})", style = MaterialTheme.typography.bodyMedium) }
                     }
                 }
-                Button(onClick = onClick, enabled = !alreadyAdded, modifier = Modifier.fillMaxWidth().heightIn(min = ActionButtonHeight)) {
+                Button(onClick = onClick, enabled = !alreadyAdded, modifier = Modifier.fillMaxWidth().heightIn(min = ImportantButtonHeight)) {
                     Text(when { alreadyAdded -> "Bereits in Liste"; isSold -> "Zurück in meine Bücher"; candidate.isbn == null -> "Ohne ISBN erfassen"; else -> "Buch hinzufügen" })
                 }
             }

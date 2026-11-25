@@ -151,3 +151,6 @@ fun SectionTitle(text: String, modifier: Modifier = Modifier) {
 
 /** One visible minimum height (Material's 40 dp) for all filled, outlined, tonal and segmented buttons; touch targets stay 48 dp via minimumInteractiveComponentSize. */
 val ActionButtonHeight = androidx.compose.material3.ButtonDefaults.MinHeight
+
+/** Higher visible height for finding, searching and checking actions (search row, add candidate, Momox check, scan more). */
+val ImportantButtonHeight = 48.dp

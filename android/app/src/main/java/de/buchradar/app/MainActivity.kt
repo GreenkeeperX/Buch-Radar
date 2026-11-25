@@ -3,6 +3,7 @@
 package de.buchradar.app
 
 import de.buchradar.app.ui.ActionButtonHeight
+import de.buchradar.app.ui.ImportantButtonHeight
 import androidx.compose.ui.input.key.type
 
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -619,7 +620,7 @@ class MainActivity : ComponentActivity() {
                                         style = MaterialTheme.typography.bodyLarge)
                                     if (isSearching) LinearProgressIndicator(Modifier.fillMaxWidth())
                                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        Button(onClick = { session.shelfReview.pause(); shelfCorrectionQuery = null; openScanner(ScannerMode.SHELF) }, modifier = Modifier.weight(1f).heightIn(min = ActionButtonHeight)) {
+                                        Button(onClick = { session.shelfReview.pause(); shelfCorrectionQuery = null; openScanner(ScannerMode.SHELF) }, modifier = Modifier.weight(1f).heightIn(min = ImportantButtonHeight)) {
                                             Icon(painterResource(R.drawable.ic_camera), null, Modifier.padding(end = 8.dp)); Text("Weitere scannen")
                                         }
                                         OutlinedButton(modifier = Modifier.heightIn(min = ActionButtonHeight), onClick = closeShelfReview) { Text("Zur Liste") }
@@ -976,7 +977,7 @@ class MainActivity : ComponentActivity() {
                                     Button(
                                         onClick = { submitInput(searchInput) },
                                         enabled = !isSearching && searchInput.isNotBlank(),
-                                        modifier = Modifier.weight(1f).heightIn(min = ActionButtonHeight),
+                                        modifier = Modifier.weight(1f).heightIn(min = ImportantButtonHeight),
                                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                                     ) {
                                         Icon(if (catalogSearch) Icons.Filled.Search else Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(20.dp))
@@ -986,13 +987,13 @@ class MainActivity : ComponentActivity() {
                                 }
                                 val camera: @Composable () -> Unit = {
                                     OutlinedButton(onClick = { openScanner(ScannerMode.AUTOMATIC) }, enabled = !isSearching,
-                                        modifier = Modifier.heightIn(min = ActionButtonHeight), contentPadding = PaddingValues(horizontal = 14.dp)) {
+                                        modifier = Modifier.heightIn(min = ImportantButtonHeight), contentPadding = PaddingValues(horizontal = 14.dp)) {
                                         Icon(painterResource(R.drawable.ic_camera), contentDescription = "Kamera öffnen")
                                     }
                                 }
                                 val manual: @Composable (Modifier) -> Unit = { mod ->
                                     OutlinedButton(onClick = { manualEntry = BookEntity("", searchInput) }, enabled = !isSearching,
-                                        modifier = mod.semantics { contentDescription = "Buch von Hand eintragen" }.heightIn(min = ActionButtonHeight),
+                                        modifier = mod.semantics { contentDescription = "Buch von Hand eintragen" }.heightIn(min = ImportantButtonHeight),
                                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)) {
                                         Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(20.dp))
                                         Text(if (oneRow) "Von Hand" else "Von Hand eintragen", modifier = Modifier.padding(start = 6.dp))
@@ -1027,7 +1028,7 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     } },
-                    confirmButton = { FilledTonalButton(modifier = Modifier.heightIn(min = ActionButtonHeight), onClick = {
+                    confirmButton = { FilledTonalButton(modifier = Modifier.heightIn(min = ImportantButtonHeight), onClick = {
                         val now = System.currentTimeMillis()
                         val snapshot = when (momoxCheckMode) {
                             "new" -> books.filter { it.lastCheckedAt == null }

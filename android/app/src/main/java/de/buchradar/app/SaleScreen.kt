@@ -1,6 +1,7 @@
 package de.buchradar.app
 
 import de.buchradar.app.ui.ActionButtonHeight
+import de.buchradar.app.ui.ImportantButtonHeight
 import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -141,7 +142,7 @@ fun SaleScreen(
                             else "$dropped gewählte Bücher sind nicht mehr dabei: kein aktuelles Angebot oder schon verkauft.",
                             style = MaterialTheme.typography.bodyMedium, color = scheme.error)
                         paused?.let { Text("Neuprüfung angehalten: $it", style = MaterialTheme.typography.bodyMedium, color = scheme.error) }
-                        if (stale.isNotEmpty()) FilledTonalButton(onClick = { onRecheck(stale) }, modifier = Modifier.fillMaxWidth().heightIn(min = ActionButtonHeight)) {
+                        if (stale.isNotEmpty()) FilledTonalButton(onClick = { onRecheck(stale) }, modifier = Modifier.fillMaxWidth().heightIn(min = ImportantButtonHeight)) {
                             Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
                             Text(if (stale.size == 1) "1 älteren Preis neu prüfen" else "${stale.size} ältere Preise neu prüfen")
                         }
