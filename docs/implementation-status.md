@@ -45,12 +45,8 @@ nach Messung an freigegebenen Scanbeispielen als bestätigt.
 3. Feldherkunft dauerhaft am Buch speichern und Budgetverteilung zwischen Quellen
    messen; Gesamtbudget und sichtbare Teilfehler/Konflikte sind ab 0.13 implementiert.
    Weitere Quellen erst nach geprüfter Schnittstelle und nachgewiesenem Nutzen.
-4. Einen künftigen Coververgleich für Einzelbücher an Referenzbildern prüfen.
-   Der bisherige Vergleich entfiel nach der Messung (AUC ca. 0,50–0,66, kein
-   brauchbarer Schwellenwert). Die Suche übernimmt die Textreihenfolge.
-   Die separat getestete Regel `coverEvidenceAllowed` lässt eine künftige Prüfung
-   im Buchmodus oder bei einem erkannten Einzelcover im Automatikmodus zu.
-   Regalscans und Regalkorrekturen sind ausgeschlossen.
+4. Cover-Bestätigung (ORB) mit mehr echten Fotos nachmessen; Schwelle 120 hat nur
+   einen knappen Abstand zur stärksten Fehlbestätigung (110). Details unten.
 5. Hauptansicht weiter in eigenständige Ansichten und Aktionen aufteilen;
    Großschrift, TalkBack, Rotation und Prozesswiederherstellung automatisiert prüfen.
 6. Verkaufsvorbereitung mit Auswahl und teilbarer Liste, optionale Bestandskopien
@@ -236,3 +232,17 @@ nach Messung an freigegebenen Scanbeispielen als bestätigt.
 - Lizenzentscheidung: GPL-3.0-only. Eine dauerhafte Release-Signierungsidentität
   ist vor produktiver Verteilung einzurichten. Vorabversionen sind als
   debug-signierte Test-APKs ohne vorkonfigurierten Momox-Zugang gekennzeichnet.
+
+## Cover-Bestätigung (Branch claude/cover-orb)
+
+- Nur Bestätigung „Cover passt zu deinem Foto“, nie Abwertung oder Ausblenden. Ein bestätigter
+  Kandidat rückt nur vor andere Ausgaben desselben Titels.
+- Nur hinter `coverEvidenceAllowed` (Modus Buch oder Automatik mit stabil erkanntem Einzelbuch),
+  nie Regal oder Regal-Korrektur. Das Kamerabild (max. 1000 px) bleibt im Speicher und wird nach
+  dem Vergleich verworfen.
+- OpenCV ORB (1500 Merkmale, Höhe 600 px, Ratio 0,75) plus RANSAC-Homographie (5 px), Schwelle
+  120 Inlier (bei 100 bestätigte eine andere Ausgabe mit gleicher Illustration einmal mit 110), höchstens 10 Kandidaten, Zeitlimit 8 s, abbrechbar.
+- Messung an lokalen Cover-Fotos (nicht im Repo): offline und auf dem Gerät keine Bestätigung
+  einer falschen Ausgabe oder eines anderen Buchs; Grenzen: Wirkung nur, wenn der Katalog ein Cover
+  derselben Gestaltung liefert. Opt-in-Messung: `CoverBenchmarkTest` mit `-e coverBenchmark true`.
+- Die App enthält nur noch arm64-v8a-Bibliotheken (Zielgerät Pixel 9a); OpenCV kostet etwa 24 MB in der APK.

@@ -26,7 +26,7 @@ class ScannerLifecycleTest {
         val delivered = mutableStateOf(false)
         ui.setContent {
             if (open.value) BookScannerView(onBarcode = { delivered.value = true },
-                onTextConfirmed = { delivered.value = true },
+                onTextConfirmed = { _, frame -> frame?.recycle(); delivered.value = true },
                 onShelfConfirmed = { _, _ -> delivered.value = true },
                 onClose = { open.value = false }) else Text("Testliste")
         }

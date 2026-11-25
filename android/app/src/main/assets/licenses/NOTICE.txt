@@ -1,0 +1,4 @@
+Bücher-Radar ist unter GPL-3.0-only lizenziert (siehe LICENSE im Quellcode).
+
+Enthaltene Drittkomponenten unter der Apache License 2.0 (Text: APACHE-2.0.txt):
+- OpenCV 4.13.0 (https://opencv.org) – Cover-Bestätigung (ORB, RANSAC-Homographie)

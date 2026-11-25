@@ -13,7 +13,7 @@ import java.io.File
 
 /** Search and review state survives activity recreation. */
 class BookSessionViewModel(application: Application) : AndroidViewModel(application) {
-    internal val search = BookSearch(viewModelScope)
+    internal val search = BookSearch(viewModelScope, confirmCovers = { frame, books -> de.buchradar.app.cover.CoverVerifier.confirm(application, frame, books) })
     val detailsBook = mutableStateOf<BookEntity?>(null)
     val manualEntry = mutableStateOf<BookEntity?>(null)
     val editingBook = mutableStateOf<BookEntity?>(null)

@@ -11,6 +11,8 @@ import de.buchradar.app.network.BookCatalog
 import de.buchradar.app.network.CatalogAccess
 import de.buchradar.app.network.CatalogBook
 import de.buchradar.app.network.CatalogResult
+import android.graphics.Bitmap
+import de.buchradar.app.cover.CoverConfirmation
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -23,7 +25,9 @@ internal class BookSearch(
     },
     private val byTitle: suspend (String) -> CatalogResult<List<CatalogBook>> = { title ->
         CatalogAccess.report { BookCatalog.findByRecognizedText(title) }
-    }
+    },
+    /** Candidate ids whose cover matches the photographed single book (see CoverVerifier). */
+    private val confirmCovers: suspend (Bitmap, List<CatalogBook>) -> Set<String> = { _, _ -> emptySet() }
 ) {
     val input = mutableStateOf("")
     val showSold = mutableStateOf(false)
@@ -48,8 +52,15 @@ internal class BookSearch(
         busy = false
     }
 
-    fun submit(action: BookInput, active: List<BookEntity>, sold: List<BookEntity>, insert: suspend (BookEntity) -> Long) {
+    /**
+     * [frame] is an in-memory photo of a single book (only from the camera behind coverEvidenceAllowed). This
+     * search owns it from the call on and recycles it on every path, including cancellation.
+     */
+    fun submit(action: BookInput, active: List<BookEntity>, sold: List<BookEntity>, frame: Bitmap? = null,
+               insert: suspend (BookEntity) -> Long) {
         leave()
+        val coverFrame = frame.takeIf { action is BookInput.SearchTitle }
+        if (coverFrame == null) frame?.recycle()
         if (action == BookInput.Invalid) {
             message.value = "Bitte eine gültige ISBN oder einen Buchtitel eingeben."
             return
@@ -57,6 +68,7 @@ internal class BookSearch(
         if (action is BookInput.AddIsbn) {
             val match = active.firstOrNull { it.isbn == action.isbn } ?: sold.firstOrNull { it.isbn == action.isbn }
             if (match != null) {
+                coverFrame?.recycle()
                 showSold.value = match.soldAt != null
                 input.value = ""
                 statusFilter.value = BookListQuery.FILTER_ALL
@@ -68,8 +80,10 @@ internal class BookSearch(
         showSold.value = false
         busy = true
         val id = requestId
-        job = scope.launch {
+        // ATOMIC: the body always starts, so its finally releases the frame even if cancelled right away.
+        job = scope.launch(start = kotlinx.coroutines.CoroutineStart.ATOMIC) {
             try {
+                if (id != requestId) return@launch
                 when (action) {
                     is BookInput.SearchTitle -> {
                         message.value = "Suche nach Titel und Autor …"
@@ -81,6 +95,13 @@ internal class BookSearch(
                             result.getOrNull()?.warnings?.isNotEmpty() == true -> result.getOrThrow().warnings.joinToString("\n")
                             candidates.isEmpty() -> "Keine passenden Treffer gefunden. Prüfe den Text oder erfasse das Buch manuell."
                             else -> null
+                        }
+                        val found = candidates
+                        busy = false
+                        if (coverFrame != null && found.isNotEmpty()) {
+                            val confirmed = catchingOperation { confirmCovers(coverFrame, found) }.getOrDefault(emptySet())
+                            // A newer search or leaving replaced the list meanwhile: keep that one untouched.
+                            if (id == requestId && candidates === found) candidates = CoverConfirmation.apply(found, confirmed)
                         }
                     }
                     is BookInput.AddIsbn -> {
@@ -118,6 +139,7 @@ internal class BookSearch(
                     BookInput.Invalid -> Unit
                 }
             } finally {
+                coverFrame?.recycle()
                 if (id == requestId) busy = false
             }
         }

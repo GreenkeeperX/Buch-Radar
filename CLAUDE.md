@@ -55,7 +55,8 @@ virtuellen Umgebung installieren, dann im Ordner `backend`:
 - Nur UI-Coroutines mit Compose-FrameClock dürfen Listenanimationen ausführen.
 - Kamera-Bilder bleiben lokal und kurzlebig. Regal-Fortsetzung speichert keine Fotos.
 - Keine Qualitätsbehauptungen ohne Messung an Referenzfällen. Katalogtreffer
-  behalten die Reihenfolge der Textsuche.
+  behalten die Reihenfolge der Textsuche; einzige Ausnahme: eine Cover-Bestätigung
+  rückt eine Ausgabe vor andere Ausgaben desselben Werks.
 - GPL-3.0-only erhalten. Keine Zugangswerte, privaten Bilder, Listen, Gerätekennungen
   oder lokalen Pfade veröffentlichen; auch APK-Inhalte prüfen.
   `tools/check-secrets.sh` läuft in CI und als Commit-Hook

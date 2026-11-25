@@ -27,6 +27,8 @@ android {
         buildConfigField("String", "MOMOX_API_TOKEN", "\"${momoxToken.replace("\\", "\\\\").replace("\"", "\\\"")}\"")
         buildConfigField("String", "GOOGLE_BOOKS_API_KEY", "\"${googleBooksKey.replace("\\", "\\\\").replace("\"", "\\\"")}\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // OpenCV (cover confirmation) ships large native libraries per ABI; the app targets phones only.
+        ndk { abiFilters += listOf("arm64-v8a") }
     }
     buildTypes {
         // Device tests run as a separate app id. The Android test runner uninstalls the
@@ -89,6 +91,8 @@ dependencies {
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
     implementation("com.google.mlkit:text-recognition:16.0.1")
     implementation("io.coil-kt:coil-compose:2.7.0")
+    // Apache-2.0; ORB features and RANSAC homography for cover confirmation.
+    implementation("org.opencv:opencv:4.13.0")
     implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.squareup.retrofit2:converter-moshi:2.11.0")

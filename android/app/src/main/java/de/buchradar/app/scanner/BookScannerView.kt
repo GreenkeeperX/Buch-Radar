@@ -60,7 +60,8 @@ import kotlin.math.abs
 @OptIn(ExperimentalCoroutinesApi::class)
 fun BookScannerView(
     onBarcode: (String) -> Unit,
-    onTextConfirmed: (String) -> Unit,
+    /** Recognised text and, only when cover evidence is allowed, a small in-memory frame copy the receiver must recycle. */
+    onTextConfirmed: (String, Bitmap?) -> Unit,
     onShelfConfirmed: (List<String>, String?) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
@@ -114,6 +115,7 @@ fun BookScannerView(
         var lastAt = 0L
         var lastTextAt = 0L
         var shelfVotes = 0
+        var singleVotes = 0
         var sampleCount = 0
         var priorGeneration: ScanGeneration? = null
         var publishKey = ""
@@ -154,6 +156,7 @@ fun BookScannerView(
                         if (frame !== priorGeneration) {
                             stability.reset()
                             shelfVotes = 0
+                            singleVotes = 0
                             rotatedPieces = emptyList()
                             previousSample = null
                             publishKey = ""
@@ -205,6 +208,9 @@ fun BookScannerView(
                         val groups = groupSpines(pieces, image.width, image.height)
                         val looksShelf = groups.size >= 3 && groups.count { group -> group.any { abs(it.angle % 180) in 55f..125f } } >= 2
                         shelfVotes = (shelfVotes + if (looksShelf) 1 else -1).coerceIn(-4, 4)
+                        // Positive evidence of one book: few horizontal text groups, over consecutive frames.
+                        val looksSingle = groups.size in 1..2 && groups.none { group -> group.any { abs(it.angle % 180) in 55f..125f } }
+                        singleVotes = if (looksSingle && difference < STEADY_DIFFERENCE) singleVotes + 1 else 0
                         val isShelf = actualMode == ScannerMode.SHELF || actualMode == ScannerMode.AUTOMATIC && shelfVotes >= 3
                         // Publisher and fragment filtering only applies to shelves: a single book whose
                         // readable text is just "ISBN 978…" must still reach the ISBN recognition.
@@ -261,6 +267,12 @@ fun BookScannerView(
                             }
                             if (!activeFrame) return@launch
                             val separated = if (isShelf) readShelfWithStill(context, capture, image, pieces, recognizer) else null
+                            // Cover confirmation only for a single book in focus, never for shelves or corrections.
+                            // The copy is made here on the worker; whoever does not hand it over recycles it.
+                            val coverAllowed = !isShelf && coverEvidenceAllowed(actualMode, detectedSingleCover = singleVotes >= 2,
+                                shelfCorrection = selection.correctionGroupId != null)
+                            var cover = if (coverAllowed) coverCopy(image) else null
+                            try {
                             ensureActive()
                             withContext(Dispatchers.Main) {
                                 if (selection.current !== frame) return@withContext
@@ -276,8 +288,12 @@ fun BookScannerView(
                                     }
                                     AppLog.add(context, "Regal: ${separated?.regions ?: 0} Bildregionen, ${selected.size} Texte, Zeitlimit=${separated?.exhausted ?: false}")
                                     shelfCallback(selected, warning)
-                                } else textCallback(text)
+                                } else {
+                                    val handed = cover; cover = null
+                                    textCallback(text, handed)
+                                }
                             }
+                            } finally { cover?.recycle() }
                         }
                     } catch (cancelled: CancellationException) { throw cancelled }
                     catch (error: Exception) {
@@ -493,3 +509,10 @@ internal fun unrotatePiece(piece: OcrPiece, degrees: Int, width: Int, height: In
     while (angle < -180) angle += 360
     return piece.copy(left = points.minOf { it.first }, right = points.maxOf { it.first }, top = points.minOf { it.second }, bottom = points.maxOf { it.second }, angle = angle)
 }
+
+/** Small copy for cover confirmation (max. 1000 px side); the analysis frame itself is recycled. */
+private fun coverCopy(image: Bitmap): Bitmap? = runCatching {
+    val scale = minOf(1f, 1000f / maxOf(image.width, image.height))
+    Bitmap.createScaledBitmap(image, (image.width * scale).toInt().coerceAtLeast(1), (image.height * scale).toInt().coerceAtLeast(1), true)
+        .let { if (it === image) image.copy(Bitmap.Config.ARGB_8888, false) else it }
+}.getOrNull()

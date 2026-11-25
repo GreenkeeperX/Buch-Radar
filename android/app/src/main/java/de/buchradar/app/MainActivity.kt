@@ -285,7 +285,7 @@ class MainActivity : ComponentActivity() {
                 }
                 val submitInput: (BookInput) -> Unit = { action ->
                     keyboard?.hide()
-                    search.submit(action, books, soldBooks, dao::insert)
+                    search.submit(action, books, soldBooks, insert = dao::insert)
                 }
                 val submitField: () -> Unit = {
                     if (showSoldBooks) keyboard?.hide()
@@ -525,13 +525,14 @@ class MainActivity : ComponentActivity() {
                                     submitInput(action)
                                 }
                             },
-                            onTextConfirmed = { text ->
+                            onTextConfirmed = { text, frame ->
                                 val action = BookInputFormat.classify(text)
                                 AppLog.add(context, "OCR-Text übernommen (${text.length} Zeichen)")
                                 scannerOpen = false
                                 shelfReviewOpen = false
                                 searchInput = if (action is BookInput.AddIsbn) BookInputFormat.autoFormatIsbn(action.isbn) else text
-                                submitInput(action)
+                                // The search owns the frame from here on and releases it on every path.
+                                search.submit(action, books, soldBooks, frame, dao::insert)
                             },
                             onShelfConfirmed = { spines, warning ->
                                 AppLog.add(context, "Regal-OCR übernommen (${spines.size} Buchrücken)")
