@@ -159,10 +159,7 @@ class AccessibilityAuditTest {
                     // The list may have moved while the audit ran; find the first book again from wherever it rests.
                     if (node { n -> n.text?.toString() == seeded[0].title } == null)
                         runCatching { scrollTo(forward = false) { n -> n.text?.toString() == seeded[0].title } }
-                            .onFailure { runCatching { scrollTo { n -> n.text?.toString() == seeded[0].title } }.onFailure { error ->
-                                val texts = mutableListOf<String>()
-                                automation.rootInActiveWindow?.let { root -> walk(root) { n -> (n.text ?: n.contentDescription)?.let { t -> texts += "${n.className}|${n.isVisibleToUser}|$t" } } }
-                                File(out, "debug.txt").writeText(texts.joinToString("\n")); throw error } }
+                            .onFailure { scrollTo { n -> n.text?.toString() == seeded[0].title } }
                     click { n -> n.text?.toString() == seeded[0].title }
                     waitFor { node { n -> n.contentDescription?.toString() == "Weitere Aktionen" } }
                     report.put(audit("details", scale, scenario))

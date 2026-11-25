@@ -16,6 +16,7 @@ import de.buchradar.app.cover.CoverConfirmation
 import de.buchradar.app.fraktur.FrakturFallback
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 
 /** List searches and their navigation state are owned by the session, including across rotation. */
@@ -66,14 +67,12 @@ internal class BookSearch(
      */
     private fun releaseShownFrame() { shownFrame?.recycle(); shownFrame = null; oldScriptAvailable = false }
 
-    /** Stops a running old-script reading; the candidates found so far stay visible. */
+    /** The running old-script reading only; cancelling it keeps the search, its first result and message. */
+    private var reading: kotlinx.coroutines.Deferred<List<CatalogBook>?>? = null
+
+    /** Stops a running old-script reading; the candidates found so far and their cover check stay. */
     fun cancelOldScript() {
-        if (message.value != OLD_SCRIPT_PROGRESS) return
-        requestId++
-        job?.cancel()
-        job = null
-        busy = false
-        message.value = null
+        reading?.cancel()
     }
 
     /** Manual old-script reading of the photographed single book behind the shown candidates. */
@@ -102,13 +101,27 @@ internal class BookSearch(
         }
     }
 
-    /** Reads the title area with the old-script models and searches again; null unless a fitting hit appears. */
-    private suspend fun oldScriptSearch(frame: Bitmap, id: Long): List<CatalogBook>? {
+    /**
+     * Reads the title area with the old-script models and searches again as a cancellable child of the current
+     * request; null unless a fitting hit appears or when the reading was cancelled.
+     */
+    private suspend fun oldScriptSearch(frame: Bitmap, id: Long): List<CatalogBook>? = kotlinx.coroutines.coroutineScope {
+        val previous = message.value
         message.value = OLD_SCRIPT_PROGRESS
-        val text = catchingOperation { readOldScript(frame) }.getOrNull()
-        if (text.isNullOrBlank() || id != requestId) return null
-        val again = catchingOperation { byTitle(text) }.getOrNull()?.value.orEmpty()
-        return again.takeIf { list -> list.any { (it.textSimilarity ?: 0) >= FrakturFallback.FITTING_SIMILARITY } }
+        val child = async {
+            val text = catchingOperation { readOldScript(frame) }.getOrNull()
+            if (text.isNullOrBlank() || id != requestId) return@async null
+            val again = catchingOperation { byTitle(text) }.getOrNull()?.value.orEmpty()
+            again.takeIf { list -> list.any { (it.textSimilarity ?: 0) >= FrakturFallback.FITTING_SIMILARITY } }
+        }
+        reading = child
+        try {
+            child.join()
+            if (child.isCancelled) null else child.await()
+        } finally {
+            reading = null
+            if (message.value == OLD_SCRIPT_PROGRESS) message.value = previous
+        }
     }
 
     fun submit(action: BookInput, active: List<BookEntity>, sold: List<BookEntity>, frame: Bitmap? = null,

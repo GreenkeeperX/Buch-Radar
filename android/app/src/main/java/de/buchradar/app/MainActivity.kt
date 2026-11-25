@@ -666,7 +666,7 @@ class MainActivity : ComponentActivity() {
                             )
                             message?.let { InfoBanner(it, onDismiss = { if (it == OLD_SCRIPT_PROGRESS) search.cancelOldScript() else message = null }) }
                             // Manual old-script reading of the photographed single book, offered once per search.
-                            if (search.oldScriptAvailable && !isSearching && coverCandidates.none { it.coverConfirmed })
+                            if (search.oldScriptAvailable && !isSearching)
                                 OutlinedButton(onClick = { search.readOldScriptNow() },
                                     modifier = Modifier.fillMaxWidth().heightIn(min = ImportantButtonHeight)) { Text("Alte Schrift lesen") }
                             Text("ISBN und Ausgabe vergleichen.",

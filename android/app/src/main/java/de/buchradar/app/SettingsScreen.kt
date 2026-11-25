@@ -142,11 +142,14 @@ fun SettingsScreen(theme: String, onTheme: (String) -> Unit, onClose: () -> Unit
                             // License texts of bundled third-party components ship inside the app.
                             de.buchradar.app.ui.SectionTitle("Lizenzen")
                             val notice = remember { runCatching { context.assets.open("licenses/NOTICE.txt").bufferedReader().use { it.readText() } }.getOrDefault("") }
-                            var showApache by rememberSaveable { mutableStateOf(false) }
+                            var showTexts by rememberSaveable { mutableStateOf(false) }
                             Text(notice.trim())
-                            TextButton(onClick = { showApache = !showApache }) { Text(if (showApache) "Apache-Lizenztext ausblenden" else "Apache-Lizenztext anzeigen") }
-                            if (showApache) Text(remember { runCatching { context.assets.open("licenses/APACHE-2.0.txt").bufferedReader().use { it.readText() } }.getOrDefault("") },
-                                style = MaterialTheme.typography.bodySmall)
+                            TextButton(onClick = { showTexts = !showTexts }) { Text(if (showTexts) "Lizenztexte ausblenden" else "Lizenztexte anzeigen") }
+                            if (showTexts) Text(remember {
+                                listOf("APACHE-2.0.txt", "LEPTONICA.txt", "LIBPNG.txt", "LIBJPEG-TURBO.md").joinToString("\n\n") { name ->
+                                    "— $name —\n" + runCatching { context.assets.open("licenses/$name").bufferedReader().use { it.readText() } }.getOrDefault("")
+                                }
+                            }, style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }

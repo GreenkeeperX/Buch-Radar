@@ -27,9 +27,11 @@ object FrakturReader {
     /** Text of the title area with both models, or null when unavailable, cancelled or out of time. */
     suspend fun read(context: Context, frame: Bitmap, budgetMillis: Long = 8_000): String? = withContext(Dispatchers.Default) {
         val started = SystemClock.elapsedRealtime()
-        val dataPath = prepareModels(context) ?: return@withContext null
+        // The budget includes model preparation; without a located title area nothing is read or searched.
         val result = withTimeoutOrNull(budgetMillis) {
-            val area = titleArea(dataPath, frame) ?: frame
+            val dataPath = prepareModels(context) ?: return@withTimeoutOrNull null
+            coroutineContext.ensureActive()
+            val area = titleArea(dataPath, frame) ?: return@withTimeoutOrNull null
             try {
                 val texts = mutableListOf<String>()
                 for (language in listOf("deu_latf", "deu")) {
@@ -37,7 +39,7 @@ object FrakturReader {
                     recognize(dataPath, language, TessBaseAPI.PageSegMode.PSM_AUTO, area)?.let { texts += it }
                 }
                 texts.joinToString("\n").trim().takeIf(String::isNotBlank)
-            } finally { if (area !== frame) area.recycle() }
+            } finally { area.recycle() }
         }
         AppLog.add(context, "Alte Schrift: ${result?.length ?: 0} Zeichen, ${SystemClock.elapsedRealtime() - started} ms")
         result
@@ -49,10 +51,13 @@ object FrakturReader {
         return try {
             suspendCancellableCoroutine { continuation ->
                 continuation.invokeOnCancellation { api.stop() }
-                val text = if (api.init(dataPath, language)) {
+                val text = if (continuation.isActive && api.init(dataPath, language)) {
                     api.setPageSegMode(mode)
                     api.setImage(image)
-                    api.getUTF8Text().also {
+                    // getHOCRText runs recognition with the cancel monitor, so stop() ends it early;
+                    // getUTF8Text then only formats the finished result.
+                    api.getHOCRText(0)
+                    if (!continuation.isActive) null else api.getUTF8Text().also {
                         if (words != null) api.words.use { pixa -> pixa.boxRects.forEach(words::add) }
                     }
                 } else null
@@ -69,18 +74,39 @@ object FrakturReader {
         return Bitmap.createBitmap(frame, rect.left, rect.top, rect.width(), rect.height())
     }
 
-    /** Copies the bundled models once to no-backup storage; Tesseract needs real files. */
+    private val prepareLock = Any()
+
+    /**
+     * Copies the bundled models to no-backup storage (Tesseract needs real files). Extraction is serialised,
+     * written to a unique temporary file and published atomically; a marker with the app's update time and the
+     * copied sizes makes an app update or a damaged file trigger a fresh copy.
+     */
     private fun prepareModels(context: Context): String? = runCatching {
-        val root = File(context.noBackupFilesDir, "tess")
-        val dir = File(root, "tessdata").apply { mkdirs() }
-        for (model in models) {
-            val target = File(dir, "$model.traineddata")
-            if (target.length() > 0) continue
-            val partial = File(dir, "$model.part")
-            context.assets.open("tessdata/$model.traineddata").use { input -> partial.outputStream().use { input.copyTo(it) } }
-            check(partial.renameTo(target))
+        synchronized(prepareLock) {
+            val root = File(context.noBackupFilesDir, "tess")
+            val dir = File(root, "tessdata").apply { mkdirs() }
+            val stamp = context.packageManager.getPackageInfo(context.packageName, 0).lastUpdateTime.toString()
+            val marker = File(dir, "installed.txt")
+            val expected = marker.takeIf { it.exists() }?.readLines().orEmpty()
+            val valid = expected.firstOrNull() == stamp && models.all { model ->
+                val size = expected.firstOrNull { it.startsWith("$model=") }?.substringAfter('=')?.toLongOrNull()
+                size != null && File(dir, "$model.traineddata").length() == size
+            }
+            if (!valid) {
+                marker.delete()
+                val sizes = models.map { model ->
+                    val temporary = File.createTempFile(model, ".part", dir)
+                    try {
+                        val copied = context.assets.open("tessdata/$model.traineddata").use { input -> temporary.outputStream().use { input.copyTo(it) } }
+                        check(copied > 0 && temporary.length() == copied)
+                        check(temporary.renameTo(File(dir, "$model.traineddata")))
+                        "$model=$copied"
+                    } finally { temporary.delete() }
+                }
+                marker.writeText((listOf(stamp) + sizes).joinToString("\n"))
+            }
+            root.path
         }
-        root.path
     }.getOrNull()
 
     private inline fun <T> com.googlecode.leptonica.android.Pixa.use(block: (com.googlecode.leptonica.android.Pixa) -> T): T =

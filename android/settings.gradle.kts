@@ -4,7 +4,7 @@ dependencyResolutionManagement {
     repositories {
         google(); mavenCentral()
         // Only Tesseract4Android (Apache-2.0) is published there; nothing else may resolve from it.
-        maven("https://jitpack.io") { content { includeGroupByRegex("com\\.github\\.adaptech-cz(\\..*)?") } }
+        maven("https://jitpack.io") { content { includeModule("com.github.adaptech-cz.Tesseract4Android", "tesseract4android") } }
     }
 }
 rootProject.name = "BuchRadar"
