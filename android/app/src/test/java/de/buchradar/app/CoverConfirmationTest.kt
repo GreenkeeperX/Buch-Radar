@@ -10,10 +10,12 @@ import org.junit.Test
 class CoverConfirmationTest {
     private fun book(title: String, isbn: String) = CatalogBook(title, "A", 2000, isbn = isbn)
 
-    @Test fun thresholdIsHundredInliers() {
+    @Test fun thresholdIs120Inliers() {
         assertFalse(CoverConfirmation.confirmed(null))
-        assertFalse(CoverConfirmation.confirmed(99))
-        assertTrue(CoverConfirmation.confirmed(100))
+        // Another edition with the same illustration reached 110 in the device measurement.
+        assertFalse(CoverConfirmation.confirmed(110))
+        assertFalse(CoverConfirmation.confirmed(119))
+        assertTrue(CoverConfirmation.confirmed(120))
     }
 
     @Test fun noConfirmationKeepsListUnchanged() {

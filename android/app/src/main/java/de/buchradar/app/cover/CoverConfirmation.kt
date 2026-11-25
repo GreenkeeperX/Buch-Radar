@@ -5,11 +5,11 @@ import de.buchradar.app.network.CatalogBook
 
 /**
  * Pure rules for cover confirmation. A cover can only confirm a candidate, never demote or hide one.
- * Threshold and limits follow the offline measurement on real cover photos: 100 RANSAC inliers
- * confirmed every matching edition and no other edition or book.
+ * Threshold and limits follow the measurement on real cover photos (offline and on the device): 100 RANSAC inliers
+ * confirmed every matching edition but once another edition with the same illustration (110); 120 confirmed none.
  */
 object CoverConfirmation {
-    const val MIN_INLIERS = 100
+    const val MIN_INLIERS = 120
     const val MAX_CANDIDATES = 10
 
     fun confirmed(inliers: Int?): Boolean = inliers != null && inliers >= MIN_INLIERS
