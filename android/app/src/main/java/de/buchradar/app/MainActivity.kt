@@ -29,6 +29,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -61,7 +62,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
@@ -147,7 +147,7 @@ import de.buchradar.app.ui.InfoBanner
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
-    @OptIn(ExperimentalMaterial3Api::class)
+    @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
@@ -193,6 +193,8 @@ class MainActivity : ComponentActivity() {
                 val keyboard = LocalSoftwareKeyboardController.current
 
                 var searchInput by session.searchInput
+                val hasSearchInput = searchInput.isNotEmpty()
+                var lastListQuery by remember { mutableStateOf(searchInput) }
                 var singleSearchBusy by session.isSearching
                 val shelfState by session.shelfReview.state.collectAsState()
                 val shelfBusy by session.shelfReview.busy.collectAsState()
@@ -763,6 +765,13 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     } else Column(Modifier.fillMaxSize().padding(padding)) {
+                        LaunchedEffect(searchInput) {
+                            if (searchInput != lastListQuery) {
+                                lastListQuery = searchInput
+                                // Saving or finding an existing ISBN clears the field and scrolls to that book.
+                                if (hasSearchInput || session.scrollToBookId.value == null) bookListState.scrollToItem(0)
+                            }
+                        }
                         // In landscape and with large fonts the fixed area may take at most 40 % of the height and scrolls itself.
                         Column(Modifier.then(if (landscape || largeFont) Modifier.heightIn(max = (LocalConfiguration.current.screenHeightDp * .4f).dp).verticalScroll(rememberScrollState()) else Modifier)
                             .padding(horizontal = 16.dp).padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -788,8 +797,18 @@ class MainActivity : ComponentActivity() {
                             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            // Overview, Momox action and chips scroll away so long lists keep their space.
-                            item(key = LIST_HEADER_KEY) {
+                            if (hasSearchInput) stickyHeader(key = LIST_HEADER_KEY) {
+                                FlowRow(
+                                    Modifier.fillMaxWidth().background(colorScheme.surface).padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Text(BookListQuery.resultCountLabel(visibleBooks.size), style = MaterialTheme.typography.labelLarge)
+                                    if (isCheckingMomox) {
+                                        val status = if (checkRun?.pausedReason == null) "läuft" else "pausiert"
+                                        Text("Momox-Prüfung $status · $momoxProgress von $momoxTotal", style = MaterialTheme.typography.bodyMedium)
+                                    }
+                                }
+                            } else item(key = LIST_HEADER_KEY) {
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                     if (books.isNotEmpty() || showSoldBooks) ListOverview(if (showSoldBooks) "Verkaufte Bücher" else "Meine Bücher", totals, showValue = !showSoldBooks,
                                         onSell = if (!showSoldBooks && !selectionMode) ({ keyboard?.hide(); session.saleDraft.value = null; saleOpen = true }) else null)
@@ -853,7 +872,12 @@ class MainActivity : ComponentActivity() {
                             }
                             if (visibleBooks.isEmpty()) item(key = "static:empty") {
                                 val noBooksYet = if (showSoldBooks) soldBooks.isEmpty() else books.isEmpty()
-                                EmptyState(
+                                val resetAction = if (!noBooksYet && (statusFilter != BookListQuery.FILTER_ALL || hasSearchInput)) {
+                                    "Suche und Filter zurücksetzen" to { statusFilter = BookListQuery.FILTER_ALL; searchInput = "" }
+                                } else null
+                                if (hasSearchInput) {
+                                    resetAction?.let { (label, reset) -> TextButton(onClick = reset) { Text(label) } }
+                                } else EmptyState(
                                     title = when {
                                         showSoldBooks && noBooksYet -> "Noch nichts verkauft"
                                         noBooksYet -> "Noch keine Bücher"
@@ -864,10 +888,7 @@ class MainActivity : ComponentActivity() {
                                         noBooksYet -> "Tippe unten auf „Scannen“ oder gib unten eine ISBN oder einen Titel ein."
                                         else -> "Kein Buch entspricht der Suche oder dem Filter."
                                     },
-                                    action = when {
-                                        !noBooksYet && (statusFilter != BookListQuery.FILTER_ALL || searchInput.isNotBlank()) -> "Suche und Filter zurücksetzen" to { statusFilter = BookListQuery.FILTER_ALL; searchInput = "" }
-                                        else -> null
-                                    }
+                                    action = resetAction
                                 )
                             } else {
                                 items(visibleBooks, key = { "book:${it.id}" }) { book ->
@@ -891,31 +912,11 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                         }
-                        // Search sits at the bottom, above the navigation and in thumb reach; it stays put
-                        // while the list scrolls. Results and actions for the entered text appear above it.
                         // Edge-to-edge windows are not resized for the keyboard: lift the search area by the
                         // keyboard height minus the navigation bar, which the scaffold padding already covers.
                         Column(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.ime.exclude(WindowInsets.navigationBars))
-                            .padding(horizontal = 16.dp).padding(top = 4.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            message?.let { InfoBanner(it, onDismiss = { message = null }) }
-                            if (!showSoldBooks && !selectionMode) {
-                                val inputIsIsbn = BookInputFormat.parseIsbn(searchInput) != null
-                                if (searchInput.isNotBlank()) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    run {
-                                        Button(onClick = { submitInput(searchInput, coverFrame) }, enabled = !isSearching, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
-                                            Icon(if (inputIsIsbn) Icons.Filled.Add else Icons.Filled.Search, contentDescription = null, modifier = Modifier.padding(end = 8.dp))
-                                            Text(when { isSearching -> "Suche …"; inputIsIsbn -> "ISBN hinzufügen"; searchInput.any(Char::isLetter) -> "Im Katalog suchen"; else -> "ISBN hinzufügen" },
-                                                style = MaterialTheme.typography.titleMedium)
-                                        }
-                                        OutlinedButton(onClick = { openScanner(ScannerMode.AUTOMATIC) }, enabled = !isSearching, modifier = Modifier.heightIn(min = 52.dp)) {
-                                            Icon(painterResource(R.drawable.ic_camera), contentDescription = "Kamera öffnen")
-                                        }
-                                    }
-                                }
-                                if (searchInput.any(Char::isLetter) && !isSearching) TextButton(onClick = { manualEntry = BookEntity("", searchInput) }) {
-                                    Icon(Icons.Filled.Edit, null, Modifier.padding(end = 6.dp)); Text("Buch manuell erfassen")
-                                }
-                            }
+                            .padding(horizontal = 16.dp).padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            message?.let { InfoBanner(it, compact = true, onDismiss = { message = null }) }
                             if (!selectionMode) OutlinedTextField(
                                     value = searchInput,
                                     onValueChange = { searchInput = it; coverFrame = null; visualCoverTest = false },
@@ -941,6 +942,30 @@ class MainActivity : ComponentActivity() {
                                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                                     keyboardActions = KeyboardActions(onSearch = { if (showSoldBooks) keyboard?.hide() else if (searchInput.isNotBlank()) submitInput(searchInput, coverFrame) })
                                 )
+                            if (hasSearchInput && !showSoldBooks && !selectionMode) FlowRow(
+                                Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                val hasLetters = searchInput.any(Char::isLetter)
+                                Button(
+                                    onClick = { submitInput(searchInput, coverFrame) },
+                                    enabled = !isSearching && searchInput.isNotBlank(),
+                                    modifier = Modifier.heightIn(min = 48.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                                ) {
+                                    Text(when {
+                                        isSearching -> "Suche …"
+                                        hasLetters && BookInputFormat.parseIsbn(searchInput) == null -> "Im Katalog suchen"
+                                        else -> "ISBN hinzufügen"
+                                    })
+                                }
+                                IconButton(onClick = { openScanner(ScannerMode.AUTOMATIC) }, enabled = !isSearching, modifier = Modifier.size(48.dp)) {
+                                    Icon(painterResource(R.drawable.ic_camera), contentDescription = "Kamera öffnen")
+                                }
+                                if (hasLetters) IconButton(onClick = { manualEntry = BookEntity("", searchInput) }, enabled = !isSearching, modifier = Modifier.size(48.dp)) {
+                                    Icon(Icons.Filled.Edit, contentDescription = "Buch manuell erfassen")
+                                }
+                            }
                         }
 
                     }

@@ -31,6 +31,7 @@ object BookListQuery {
 
     fun filterLabel(key: String) = filters.firstOrNull { it.first == key }?.second ?: "Alle"
     fun sortLabel(key: String) = sorts.firstOrNull { it.first == key }?.second ?: "Neueste"
+    fun resultCountLabel(count: Int) = if (count == 0) "Keine Treffer" else "$count Treffer"
 
     /** Case-, accent- and punctuation-insensitive form; "Müller" matches "muller". */
     fun fold(value: String): String = Normalizer.normalize(value.lowercase(Locale.ROOT), Normalizer.Form.NFD)

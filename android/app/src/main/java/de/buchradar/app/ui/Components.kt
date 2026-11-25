@@ -52,7 +52,7 @@ fun formatEuro(cents: Long): String = NumberFormat.getCurrencyInstance(Locale.GE
 
 /** Status line with tone-dependent colour and icon; announced by TalkBack. */
 @Composable
-fun InfoBanner(text: String, modifier: Modifier = Modifier, onDismiss: (() -> Unit)? = null) {
+fun InfoBanner(text: String, modifier: Modifier = Modifier, compact: Boolean = false, onDismiss: (() -> Unit)? = null) {
     val tone = messageTone(text)
     val status = LocalStatusColors.current
     val scheme = MaterialTheme.colorScheme
@@ -65,7 +65,8 @@ fun InfoBanner(text: String, modifier: Modifier = Modifier, onDismiss: (() -> Un
         color = container, contentColor = content, shape = RoundedCornerShape(12.dp),
         modifier = modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite }
     ) {
-        Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically,
+        val verticalPadding = if (compact) 0.dp else 8.dp
+        Row(Modifier.padding(start = 12.dp, end = 4.dp, top = verticalPadding, bottom = verticalPadding), verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             when (tone) {
                 MessageTone.PROGRESS -> CircularProgressIndicator(Modifier.size(20.dp), color = content, strokeWidth = 2.5.dp)

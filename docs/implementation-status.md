@@ -180,6 +180,19 @@ nach Messung an freigegebenen Scanbeispielen als bestätigt.
 - Offen: Großschrift/TalkBack-Abnahme, Rückgängig nach Drehen am Gerät,
   weitere Aufteilung von `MainActivity` (Regal- und Trefferansicht).
 
+## Überarbeitung der Listensuche (Arbeitsstand)
+- Bei Texteingabe ersetzt die Trefferzahl den Listenkopf. Eine laufende oder
+  pausierte Momox-Prüfung zeigt dort ihren Fortschritt. Beim Leeren erscheinen
+  Übersicht, Prüfaktionen, Filter und Sortierung wieder.
+- Unter dem Suchfeld stehen die Hauptaktion und die Kamera, bei Buchstaben
+  zusätzlich das Stiftsymbol für die manuelle Erfassung. Die Aktionszeile hat
+  mindestens 48 dp hohe Tippflächen und kann bei großer Schrift umbrechen.
+- Im direkten JVM-Lauf bestanden alle 83 Tests, darunter der Test der Anzeige
+  für null, einen und mehrere Treffer. Alle sechs Gerätetest-Quelldateien ließen
+  sich kompilieren. Der separate Lint-Lauf meldete drei Warnungen und keine Fehler.
+  Die Socket-Sperre der Build-Umgebung blockierte den Gradle-Prüflauf.
+  APK-Bau sowie Großschrift- und TalkBack-Prüfung der Suchzeile am Gerät stehen aus.
+
 ## Erkennung (0.15.0)
 - ISBN aus Text: bis zu zwei Trenner zwischen Ziffern (OCR liest „-“ als „.“) und
   Klarschriftzeile unter dem Barcode mit typischen Fehllesungen; nur 978/979 mit

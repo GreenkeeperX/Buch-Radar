@@ -20,6 +20,12 @@ class BookListQueryTest {
         assertEquals(listOf("1"), BookListQuery.apply(books, "STRAßE", "all", "recent", false).map { it.id })
     }
 
+    @Test fun resultCountLabelHandlesZeroOneAndManyMatches() {
+        assertEquals("Keine Treffer", BookListQuery.resultCountLabel(0))
+        assertEquals("1 Treffer", BookListQuery.resultCountLabel(1))
+        assertEquals("12 Treffer", BookListQuery.resultCountLabel(12))
+    }
+
     @Test fun formattedIsbnFindsCompactStoredIsbn() {
         val books = listOf(book("1", "A", isbn = "9780804429573"), book("2", "B", isbn = "9780140328721"))
         assertEquals(listOf("1"), BookListQuery.apply(books, "978-0-8044-2957-3", "all", "recent", false).map { it.id })
