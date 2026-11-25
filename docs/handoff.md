@@ -53,10 +53,14 @@ Im aktuellen Arbeitsstand stehen die Suchaktionen unter dem Eingabefeld. Beim
 Tippen zeigt die Liste sofort den ersten Treffer und die Trefferzahl. Der Stand
 einer laufenden Momox-Prüfung bleibt beim Scrollen sichtbar.
 
-Die Messung des Coververgleichs ergab keinen brauchbaren Schwellenwert. Der
-Bildvergleich wurde entfernt. Katalogtreffer behalten ihre Textreihenfolge.
-`coverEvidenceAllowed` ist für eine spätere Coverprüfung vorgesehen und wird
-im Scanner derzeit nicht aufgerufen.
+Der frühere Coververgleich (Hash/Histogramm) ergab keinen brauchbaren Schwellenwert
+und wurde entfernt. Seit PR #5 bestätigt `cover/CoverVerifier` (OpenCV ORB plus
+RANSAC, ab 120 Inliern) Kandidaten beim Einzelbuch: nur hinter `coverEvidenceAllowed`
+(Buch oder Automatik mit stabil erkanntem Einzelbuch, nie Regal/Korrektur), nur als
+positiver Hinweis; ein bestätigter Kandidat rückt nur vor andere Ausgaben desselben
+Werks (Titel und Autor). Sonst bleibt die Textreihenfolge. Die App enthält bewusst nur
+arm64-v8a-Bibliotheken (Zielgeräte Pixel 9a); 32-Bit-Geräte und x86-Emulatoren
+sind damit ausgeschlossen.
 
 ## Nächste konkrete Arbeit
 

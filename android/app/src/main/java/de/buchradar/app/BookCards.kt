@@ -82,8 +82,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-data class MomoxSummary(val available: Int, val unavailable: Int, val errors: Int, val totalValueCents: Long = 0)
-
 internal fun formatDateTime(millis: Long): String = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.GERMANY).format(Date(millis))
 
 /**
@@ -132,32 +130,15 @@ internal fun formatCheckedAt(millis: Long, now: Long = System.currentTimeMillis(
     }
 }
 
-/**
- * One quiet line for Momox: when the list was last checked and the check action. Counts live in
- * the overview and the filter; only errors of the last run get a link to the error filter.
- * Without any check yet a full-width button says what the check does.
- */
-/** A check is due (button look in the action row) with the same age rule as the sale list and check dialog, or when a book with ISBN was never checked. */
-fun momoxCheckDue(lastCheckedAt: Long?, hasUncheckedIsbn: Boolean, now: Long = System.currentTimeMillis()): Boolean =
-    hasUncheckedIsbn || lastCheckedAt == null || now - lastCheckedAt >= de.buchradar.app.domain.SaleList.STALE_AFTER_MILLIS
-
 @Composable
 internal fun MomoxActionRow(lastCheckedAt: Long?, errors: Int, canCheck: Boolean, checkDue: Boolean, onShowErrors: () -> Unit, onCheck: () -> Unit) {
     val scheme = MaterialTheme.colorScheme
-    if (lastCheckedAt == null) {
-        if (canCheck) FilledTonalButton(onClick = onCheck, modifier = Modifier.fillMaxWidth().heightIn(min = ImportantButtonHeight)) {
-            Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("Ankaufpreise bei Momox prüfen")
-        }
-        return
-    }
     FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalArrangement = Arrangement.Center) {
-        Row(Modifier.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("Geprüft ${formatCheckedAt(lastCheckedAt)}", style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
-            if (errors > 0) TextButton(onClick = onShowErrors, modifier = Modifier.heightIn(min = 48.dp)) {
-                Text(if (errors == 1) "1 Fehler" else "$errors Fehler", color = scheme.error)
-            }
+        lastCheckedAt?.let {
+            Text("Geprüft ${formatCheckedAt(it)}", style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+        }
+        if (errors > 0) TextButton(onClick = onShowErrors, modifier = Modifier.heightIn(min = 48.dp)) {
+            Text("$errors Fehler im Bestand", color = scheme.error)
         }
         val label: @Composable () -> Unit = {
             Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -272,7 +253,7 @@ internal fun CandidateCard(candidate: CatalogBook, alreadyAdded: Boolean, isSold
                     StatusPill(label, container, content)
                 }
                 // Only ever a positive hint: the photographed cover shows this edition's design.
-                if (candidate.coverConfirmed) StatusPill("Cover passt zu deinem Foto", status.successContainer, status.onSuccessContainer)
+                if (candidate.coverConfirmed) StatusPill("Cover passt zu deinem Foto", status.successContainer, status.onSuccessContainer, maxLines = 3)
                 var showSources by rememberSaveable(candidate.candidateId) { mutableStateOf(false) }
                 if (candidate.sources.isNotEmpty()) TextButton(onClick = { showSources = !showSources }, contentPadding = ButtonDefaults.TextButtonContentPadding) {
                     if (candidate.conflictingFields.isNotEmpty()) Icon(Icons.Filled.Warning, null, tint = scheme.tertiary, modifier = Modifier.size(18.dp).padding(end = 4.dp))

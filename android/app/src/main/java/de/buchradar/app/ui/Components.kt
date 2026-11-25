@@ -105,12 +105,12 @@ fun CoverImage(url: String?, title: String?, width: Dp, height: Dp, modifier: Mo
 }
 
 @Composable
-fun StatusPill(text: String, container: Color, content: Color, modifier: Modifier = Modifier, strong: Boolean = false) {
+fun StatusPill(text: String, container: Color, content: Color, modifier: Modifier = Modifier, strong: Boolean = false, maxLines: Int = 1) {
     Surface(color = container, contentColor = content, shape = RoundedCornerShape(50), modifier = modifier) {
         Text(
             text, Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
             style = if (strong) MaterialTheme.typography.titleMedium else MaterialTheme.typography.labelLarge,
-            fontWeight = if (strong) FontWeight.Bold else FontWeight.SemiBold, maxLines = 1, textAlign = TextAlign.Center
+            fontWeight = if (strong) FontWeight.Bold else FontWeight.SemiBold, maxLines = maxLines, textAlign = TextAlign.Center
         )
     }
 }
