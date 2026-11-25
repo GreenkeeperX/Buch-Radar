@@ -150,10 +150,19 @@ class AccessibilityAuditTest {
                     report.put(audit("suche-ime-aktionen", scale, scenario))
                     scrollTo(forward = false, within = fieldBounds) { it.isEditable }
                     pressBack()
+                    // Without the keyboard the bounded search area can rest scrolled; bring the clear button back.
+                    scrollTo(forward = false) { it.contentDescription?.toString() == "Eingabe löschen" }
                     click { it.contentDescription?.toString() == "Eingabe löschen" }
                     // With large fonts the header may fill the screen; the first book must be reachable by scrolling.
                     scrollTo { n -> n.text?.toString() == seeded[0].title }
                     report.put(audit("liste-buch", scale, scenario))
+                    // The list may have moved while the audit ran; find the first book again from wherever it rests.
+                    if (node { n -> n.text?.toString() == seeded[0].title } == null)
+                        runCatching { scrollTo(forward = false) { n -> n.text?.toString() == seeded[0].title } }
+                            .onFailure { runCatching { scrollTo { n -> n.text?.toString() == seeded[0].title } }.onFailure { error ->
+                                val texts = mutableListOf<String>()
+                                automation.rootInActiveWindow?.let { root -> walk(root) { n -> (n.text ?: n.contentDescription)?.let { t -> texts += "${n.className}|${n.isVisibleToUser}|$t" } } }
+                                File(out, "debug.txt").writeText(texts.joinToString("\n")); throw error } }
                     click { n -> n.text?.toString() == seeded[0].title }
                     waitFor { node { n -> n.contentDescription?.toString() == "Weitere Aktionen" } }
                     report.put(audit("details", scale, scenario))
@@ -382,7 +391,11 @@ class AccessibilityAuditTest {
     }
 
     private fun click(match: (AccessibilityNodeInfo) -> Boolean) {
-        var target = node(match) ?: error("Element nicht gefunden")
+        // The tree can be rebuilt while a list settles after scrolling; wait briefly instead of failing.
+        val end = SystemClock.elapsedRealtime() + 5_000
+        var found = node(match)
+        while (found == null && SystemClock.elapsedRealtime() < end) { SystemClock.sleep(200); found = node(match) }
+        var target = found ?: error("Element nicht gefunden")
         check(target.packageName?.toString() == context.packageName) { "Element gehört zu einer fremden App" }
         while (!target.isClickable) target = target.parent ?: break
         target.performAction(AccessibilityNodeInfo.ACTION_CLICK)
