@@ -1,6 +1,5 @@
 package de.buchradar.app
 
-import android.graphics.Bitmap
 import de.buchradar.app.domain.catchingOperation
 import de.buchradar.app.network.CatalogBook
 import de.buchradar.app.network.CatalogAccess
@@ -37,7 +36,7 @@ interface ShelfReviewStore {
 class ShelfReviewController(
     private val scope: CoroutineScope,
     private val store: ShelfReviewStore,
-    private val lookup: suspend (String, Bitmap?) -> List<CatalogBook>
+    private val lookup: suspend (String) -> List<CatalogBook>
 ) {
     private val mutableState = MutableStateFlow(ShelfReviewState())
     val state = mutableState.asStateFlow()
@@ -50,7 +49,6 @@ class ShelfReviewController(
     private var active = false
     private var generation = 0L
     private var worker: Job? = null
-    private val frames = mutableMapOf<String, Bitmap>()
 
     init { action { } }
 
@@ -102,7 +100,7 @@ class ShelfReviewController(
         stopWorker()
     }
 
-    fun correct(id: String, query: String, frame: Bitmap? = null): Job = activate {
+    fun correct(id: String, query: String): Job = activate {
         require(query.isNotBlank())
         update { old ->
             val found = old.groups.firstOrNull { it.id == id } ?: return@update old
@@ -110,13 +108,10 @@ class ShelfReviewController(
                 postponed = false, error = null, revision = found.revision + 1, warnings = emptyList())
             old.copy(groups = listOf(corrected) + old.groups.filterNot { it.id == id })
         }
-        frames.remove(id)
-        if (frame != null && mutableState.value.groups.any { it.id == id }) frames[id] = frame
     }
 
     fun postpone(id: String): Job = action {
         update { old -> old.copy(groups = old.groups.map { if (it.id == id) it.copy(postponed = true) else it }) }
-        frames.remove(id)
         startWorker()
     }
 
@@ -132,7 +127,6 @@ class ShelfReviewController(
 
     fun complete(id: String): Job = action {
         update { old -> old.copy(groups = old.groups.filterNot { it.id == id }) }
-        frames.remove(id)
         startWorker()
     }
 
@@ -147,7 +141,6 @@ class ShelfReviewController(
                     loaded = true
                 }
             }
-            frames.clear()
         }
     }
 
@@ -167,8 +160,7 @@ class ShelfReviewController(
             try {
                 while (isActive && active) {
                     val item = mutableState.value.groups.firstOrNull { it.pending && !it.postponed } ?: break
-                    val frame = frames.remove(item.id)
-                    val result = catchingOperation { CatalogAccess.report { lookup(item.query, frame) } }
+                    val result = catchingOperation { CatalogAccess.report { lookup(item.query) } }
                     ensureActive()
                     update { old -> old.copy(groups = old.groups.map { current ->
                         if (current.id == item.id && current.revision == item.revision && !current.postponed)

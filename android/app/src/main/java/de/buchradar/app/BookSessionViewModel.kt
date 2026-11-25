@@ -1,19 +1,17 @@
 package de.buchradar.app
 
 import android.app.Application
-import android.graphics.Bitmap
 import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import de.buchradar.app.data.AtomicShelfReviewStore
 import de.buchradar.app.domain.BookIdentity
 import de.buchradar.app.network.BookCatalog
-import de.buchradar.app.network.CoverImageMatcher
 import de.buchradar.app.data.BookEntity
 import de.buchradar.app.scanner.ScannerMode
 import java.io.File
 
-/** Search/review state survives activity recreation; bitmaps never enter saved bundles. */
+/** Search and review state survives activity recreation. */
 class BookSessionViewModel(application: Application) : AndroidViewModel(application) {
     val searchInput = mutableStateOf("")
     val scrollToBookId = mutableStateOf<String?>(null)
@@ -23,16 +21,13 @@ class BookSessionViewModel(application: Application) : AndroidViewModel(applicat
     val manualEntry = mutableStateOf<BookEntity?>(null)
     val editingBook = mutableStateOf<BookEntity?>(null)
     val scannerOpen = mutableStateOf(false)
-    val coverFrame = mutableStateOf<Bitmap?>(null)
-    val visualCoverTest = mutableStateOf(false)
     val coverCandidates = mutableStateOf<List<de.buchradar.app.network.CatalogBook>>(emptyList())
     val shelfReviewOpen = mutableStateOf(false)
     val shelfReview = ShelfReviewController(viewModelScope,
-        AtomicShelfReviewStore(File(application.noBackupFilesDir, "shelf-review.json"))) { text, frame ->
+        AtomicShelfReviewStore(File(application.noBackupFilesDir, "shelf-review.json"))) { text ->
         val isbn = BookIdentity.canonicalIsbn(text) ?: BookIdentity.unambiguousIsbn(text)
-        val matches = if (isbn != null) listOfNotNull(BookCatalog.findByIsbn(isbn))
-            else BookCatalog.findByRecognizedText(text)
-        if (frame != null) CoverImageMatcher.rank(application, frame, matches) else matches
+        if (isbn != null) listOfNotNull(BookCatalog.findByIsbn(isbn))
+        else BookCatalog.findByRecognizedText(text)
     }
     val shelfCorrectionQuery = mutableStateOf<String?>(null)
     val shelfEditQuery = mutableStateOf<String?>(null)

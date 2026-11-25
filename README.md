@@ -20,7 +20,7 @@ exportieren; unterschiedliche Signaturen erlauben kein direktes Update.
 
 - ISBN-/Titelsuche über Open Library, Google Books und DNB; konkrete Open-Library-
   Ausgaben statt Kombination beliebiger ISBNs mit Werkdaten.
-- Barcode und lokale OCR mit Einzelbuch-, Regal- und experimentellem Covermodus.
+- Barcode und lokale OCR mit Automatik-, Einzelbuch- und Regalmodus.
 - Bildgestützte Trennung und separate OCR möglicher Buchrücken im Regal.
 - Regal-Funde lokal fortsetzen, korrigieren und für später zurückstellen;
   erkannte Texte und Treffer bleiben auch nach einem App-Neustart erhalten.
@@ -35,9 +35,8 @@ exportieren; unterschiedliche Signaturen erlauben kein direktes Update.
 ## Grenzen
 
 Dies ist weiterhin ein Prototyp. OCR, Szenenerkennung und Regalgruppierung sind
-heuristisch und müssen an echten Büchern überprüft werden. Der Cover-Test sucht
-Kandidaten über Text und vergleicht ihre Cover lokal; er ist keine globale visuelle
-Bildsuche. Ausgabe und ISBN vor einer Übernahme vergleichen.
+heuristisch und müssen an echten Büchern überprüft werden. Die Katalogsuche
+verwendet ISBN oder Suchtext. Ausgabe und ISBN vor einer Übernahme vergleichen.
 
 Die bisherige Momox-Anbindung verwendet einen nicht als öffentliche Schnittstelle
 zugesicherten App-Endpunkt. Ein stabiler autorisierter Zugang ist noch zu klären.
