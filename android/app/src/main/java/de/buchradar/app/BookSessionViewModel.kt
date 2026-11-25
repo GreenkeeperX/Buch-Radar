@@ -13,15 +13,11 @@ import java.io.File
 
 /** Search and review state survives activity recreation. */
 class BookSessionViewModel(application: Application) : AndroidViewModel(application) {
-    val searchInput = mutableStateOf("")
-    val scrollToBookId = mutableStateOf<String?>(null)
-    val isSearching = mutableStateOf(false)
-    val message = mutableStateOf<String?>(null)
+    internal val search = BookSearch(viewModelScope)
     val detailsBook = mutableStateOf<BookEntity?>(null)
     val manualEntry = mutableStateOf<BookEntity?>(null)
     val editingBook = mutableStateOf<BookEntity?>(null)
     val scannerOpen = mutableStateOf(false)
-    val coverCandidates = mutableStateOf<List<de.buchradar.app.network.CatalogBook>>(emptyList())
     val shelfReviewOpen = mutableStateOf(false)
     val shelfReview = ShelfReviewController(viewModelScope,
         AtomicShelfReviewStore(File(application.noBackupFilesDir, "shelf-review.json"))) { text ->
@@ -33,20 +29,14 @@ class BookSessionViewModel(application: Application) : AndroidViewModel(applicat
     val shelfEditQuery = mutableStateOf<String?>(null)
     val shelfEditText = mutableStateOf("")
     val scannerStartMode = mutableStateOf(ScannerMode.AUTOMATIC)
-    val momoxSummary = mutableStateOf<MomoxSummary?>(null)
-    val summaryExpanded = mutableStateOf(false)
-    val dismissedSummaryRun = mutableStateOf<Long?>(null)
     val deletingBook = mutableStateOf<BookEntity?>(null)
     val pendingUndo = mutableStateOf<PendingUndo?>(null)
     val settingsOpen = mutableStateOf(false)
     val saleOpen = mutableStateOf(false)
     /** Ids chosen on the sale screen; kept here rather than in the saved state, which large lists would overflow. */
     val saleDraft = mutableStateOf<List<String>?>(null)
-    val showSoldBooks = mutableStateOf(false)
     val selectionMode = mutableStateOf(false)
     val selectedIsbns = mutableStateOf<Set<String>>(emptySet())
-    val statusFilter = mutableStateOf("all")
-    val sortMode = mutableStateOf("recent")
     val sortMenuOpen = mutableStateOf(false)
     val momoxCheckDialogOpen = mutableStateOf(false)
     val momoxCheckMode = mutableStateOf("stale")

@@ -1,8 +1,23 @@
 package de.buchradar.app
 
-import android.Manifest
 import android.app.UiAutomation
-import android.content.pm.PackageManager
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.view.PixelCopy
+import androidx.activity.compose.setContent
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import de.buchradar.app.scanner.ScannerLayout
+import de.buchradar.app.scanner.ScannerMode
+import de.buchradar.app.ui.BuchRadarTheme
+import de.buchradar.app.domain.BookInputFormat
+import de.buchradar.app.data.AtomicShelfReviewStore
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlin.math.ceil
+import kotlin.math.floor
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Rect
@@ -40,15 +55,17 @@ import kotlin.math.pow
  * touch targets of at least 48×48 dp, a spoken label for every actionable element,
  * estimated text contrast from a screenshot (4.5:1, large text 3:1) and elements cut
  * off at the window edge. Results and screenshots stay in the test app's cache.
- * Aim the camera at a blank surface so automatic recognition does not leave the scanner.
+ * The scanner panel uses fixed text and an empty preview in the app window.
  */
 class AccessibilityAuditTest {
     private companion object { const val BACKUP_KEY = "buchradar_a11y_font_scale_backup" }
 
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val automation: UiAutomation get() = instrumentation.uiAutomation
-    private val context get() = instrumentation.targetContext
-    private val out = File(context.cacheDir, "a11y-audit").apply { mkdirs() }
+    private val context get() = instrumentation.targetContext.also {
+        check(it.packageName == "de.buchradar.app.devicetest")
+    }
+    private val out by lazy { File(context.cacheDir, "a11y-audit").apply { mkdirs() } }
 
     private val seeded = listOf(
         BookEntity("9780140328721", "Testbuch Barrierefreiheit Eins", "Erika Muster", 1999,
@@ -88,54 +105,101 @@ class AccessibilityAuditTest {
         check(shell("settings get global $BACKUP_KEY").trim() == "v:$original") { "Sicherung der Schriftgröße fehlgeschlagen" }
         val dao = BuchRadarDatabase.get(context).bookDao()
         val report = JSONArray()
+        val scales = listOf("1.0", "1.3", "2.0")
+        val screens = setOf("liste", "suche-ime", "suche-ime-aktionen", "liste-buch", "details", "verkaufen", "einstellungen", "kamera")
+        val shelfStore = AtomicShelfReviewStore(File(context.noBackupFilesDir, "shelf-review.json"))
+        val shelfBefore = runBlocking { shelfStore.read() }
+        val addShelfFixture = shelfBefore.groups.isEmpty()
         try {
+            if (addShelfFixture) runBlocking {
+                shelfStore.write(ShelfReviewState(listOf(ShelfLookupGroup("a11y-regal", "Testfund", pending = false)), 1))
+            }
+            for (scale in scales) {
+                val oldCapture = File(out, "kamera-$scale.png")
+                check(!oldCapture.exists() || oldCapture.delete())
+            }
             // Leftovers of an aborted run go first, so the seeded books are fresh.
             runBlocking { seeded.forEach { dao.deleteBook(it.id) }; seeded.forEach { dao.insert(it) } }
-            for (scale in listOf("1.0", "1.3", "2.0")) {
+            for (scale in scales) {
                 shell("settings put system font_scale $scale")
                 SystemClock.sleep(1_500)
                 ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                    scenario.onActivity { check(it.resources.configuration.fontScale == scale.toFloat()) }
                     showList()
-                    report.put(audit("liste", scale))
-                    if (context.checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-                        click { n -> n.text?.toString() == "Scannen" }
-                        waitFor { node { n -> n.contentDescription?.toString() == "Kamera schließen" } }
-                        val safeBounds = Rect()
-                        scenario.onActivity { activity ->
-                            val decor = activity.window.decorView
-                            val insets = requireNotNull(ViewCompat.getRootWindowInsets(decor))
-                                .getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
-                            val origin = IntArray(2).also { decor.getLocationOnScreen(it) }
-                            safeBounds.set(origin[0] + insets.left, origin[1] + insets.top,
-                                origin[0] + decor.width - insets.right, origin[1] + decor.height - insets.bottom)
-                        }
-                        report.put(audit("kamera", scale, safeBounds))
-                        click { n -> n.contentDescription?.toString() == "Kamera schließen" }
-                        waitFor { node { n -> n.contentDescription?.toString() == "Einstellungen öffnen" } }
+                    waitFor { node { n -> n.text?.toString() == "Fortsetzen" } }
+                    report.put(audit("liste", scale, scenario))
+                    click { it.isEditable }
+                    val title = "Testbuch"
+                    val field = requireNotNull(node { it.isEditable })
+                    check(field.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, Bundle().apply {
+                        putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, title)
+                    }))
+                    waitFor { node { it.isEditable && it.text?.toString()?.contains(title) == true } }
+                    waitFor {
+                        var visible = false
+                        scenario.onActivity { visible = ViewCompat.getRootWindowInsets(it.window.decorView)?.isVisible(WindowInsetsCompat.Type.ime()) == true }
+                        Unit.takeIf { visible }
                     }
+                    check(node { it.text?.toString() == "Fortsetzen" } == null)
+                    waitFor { node { it.text?.toString()?.endsWith(" Treffer") == true } }
+                    report.put(audit("suche-ime", scale, scenario))
+                    val fieldBounds = Rect().also { bounds -> requireNotNull(node { it.isEditable }).getBoundsInScreen(bounds) }
+                    scrollTo(within = fieldBounds) { it.text?.toString() == "Im Katalog suchen" }
+                    scrollTo(within = fieldBounds) { it.contentDescription?.toString() == "Buch von Hand eintragen" }
+                    scrollTo(within = fieldBounds) { it.contentDescription?.toString() == "Kamera öffnen" }
+                    report.put(audit("suche-ime-aktionen", scale, scenario))
+                    scrollTo(forward = false, within = fieldBounds) { it.isEditable }
+                    pressBack()
+                    click { it.contentDescription?.toString() == "Eingabe löschen" }
                     // With large fonts the header may fill the screen; the first book must be reachable by scrolling.
                     scrollTo { n -> n.text?.toString() == seeded[0].title }
-                    report.put(audit("liste-buch", scale))
+                    report.put(audit("liste-buch", scale, scenario))
                     click { n -> n.text?.toString() == seeded[0].title }
                     waitFor { node { n -> n.contentDescription?.toString() == "Weitere Aktionen" } }
-                    report.put(audit("details", scale))
+                    report.put(audit("details", scale, scenario))
                     pressBack()
                     waitFor { node { n -> n.contentDescription?.toString() == "Einstellungen öffnen" } }
                     // The sale screen, reached from the overview's "Verkaufen" (seeded book 1 has an offer).
                     scrollTo(forward = false) { n -> n.text?.toString() == "Verkaufen" }
                     click { n -> n.text?.toString() == "Verkaufen" }
                     waitFor { node { n -> n.contentDescription?.toString() == "Zurück zur Liste" } }
-                    report.put(audit("verkaufen", scale))
+                    val saleIsbn = BookInputFormat.displayIsbn(seeded[0].isbn)
+                    scrollTo { it.text?.contains(saleIsbn) == true }
+                    report.put(audit("verkaufen", scale, scenario))
                     pressBack()
                     waitFor { node { n -> n.contentDescription?.toString() == "Einstellungen öffnen" } }
                     click { n -> n.contentDescription?.toString() == "Einstellungen öffnen" }
                     waitFor { node { n -> n.text?.toString() == "Einstellungen" } }
-                    report.put(audit("einstellungen", scale))
+                    report.put(audit("einstellungen", scale, scenario))
+
+                    // Use exactly the production layout. No CameraX, OCR or lookup is attached to its controls.
+                    var panel: Rect? = null
+                    scenario.onActivity { activity ->
+                        activity.setContent {
+                            BuchRadarTheme(darkTheme = false) {
+                                ScannerLayout(ScannerMode.SINGLE_BOOK, correcting = false, hint = "Text erkannt",
+                                    observed = "Testbuch Barrierefreiheit Eins\nErika Muster\nRoman · Verlag", shelf = false, finalizing = false,
+                                    onConfirm = {}, onModeChange = {}, onClose = {},
+                                    panelModifier = Modifier.onGloballyPositioned {
+                                        val r = it.boundsInWindow()
+                                        panel = Rect(ceil(r.left).toInt(), ceil(r.top).toInt(), floor(r.right).toInt(), floor(r.bottom).toInt())
+                                    }, preview = {})
+                            }
+                        }
+                    }
+                    waitFor { node { it.text?.toString() == "Text erkannt" } }
+                    scrollTo { it.contentDescription?.toString() == "Kamera schließen" }
+                    report.put(audit("kamera", scale, scenario) { panel })
                 }
             }
+            val measured = (0 until report.length()).map { index ->
+                val entry = report.getJSONObject(index)
+                entry.getString("screen") to entry.getString("fontScale")
+            }
+            check(measured.size == screens.size * scales.size && measured.toSet() == scales.flatMap { scale -> screens.map { it to scale } }.toSet())
         } finally {
             restoreFontScale()
-            runBlocking { seeded.forEach { dao.deleteBook(it.id) } }
+            runBlocking { seeded.forEach { dao.deleteBook(it.id) }; if (addShelfFixture) shelfStore.write(shelfBefore) }
             File(out, "report.json").writeText(report.toString(2))
         }
     }
@@ -164,16 +228,46 @@ class AccessibilityAuditTest {
 
     private fun pressBack() { ownRoot(); instrumentation.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK) }
 
-    private fun audit(screen: String, scale: String, safeBounds: Rect? = null): JSONObject {
+    private fun audit(screen: String, scale: String, scenario: ActivityScenario<MainActivity>,
+                      panelInWindow: () -> Rect? = { null }): JSONObject {
         instrumentation.waitForIdleSync()
         SystemClock.sleep(800)
-        ownRoot()
-        val shot = automation.takeScreenshot()
         val root = ownRoot()
         val density = context.resources.displayMetrics.density
         val window = Rect().also { root.getBoundsInScreen(it) }
+        val safeBounds = Rect()
+        val origin = IntArray(2)
+        var shot: Bitmap? = null
+        val ready = CountDownLatch(1)
+        var copyResult = PixelCopy.ERROR_SOURCE_NO_DATA
+        scenario.onActivity { activity ->
+            val decor = activity.window.decorView
+            val insets = requireNotNull(ViewCompat.getRootWindowInsets(decor))
+            if (screen.startsWith("suche-ime")) check(insets.isVisible(WindowInsetsCompat.Type.ime()))
+            val inset = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout() or WindowInsetsCompat.Type.ime())
+            val location = IntArray(2).also { decor.getLocationInWindow(it) }
+            val safe = Rect(location[0] + inset.left, location[1] + inset.top,
+                location[0] + decor.width - inset.right, location[1] + decor.height - inset.bottom)
+            decor.getLocationOnScreen(origin)
+            origin[0] -= location[0]
+            origin[1] -= location[1]
+            safeBounds.set(safe)
+            safeBounds.offset(origin[0], origin[1])
+            val crop = if (screen == "kamera") panelInWindow()?.takeIf { !it.isEmpty && safe.contains(it) } else safe
+            if (crop != null && !crop.isEmpty) {
+                val bitmap = Bitmap.createBitmap(crop.width(), crop.height(), Bitmap.Config.ARGB_8888)
+                shot = bitmap
+                origin[0] += crop.left
+                origin[1] += crop.top
+                PixelCopy.request(activity.window, Rect(crop), bitmap, { result ->
+                    copyResult = result
+                    ready.countDown()
+                }, Handler(Looper.getMainLooper()))
+            }
+        }
+        val image = shot
+        if (image != null) check(ready.await(5, TimeUnit.SECONDS) && copyResult == PixelCopy.SUCCESS) { "Fensteraufnahme fehlgeschlagen" }
         val issues = JSONArray()
-        var controlsTop = Int.MAX_VALUE
         fun issue(kind: String, node: AccessibilityNodeInfo, bounds: Rect, detail: String) {
             issues.put(JSONObject().put("kind", kind).put("label", label(node).take(80)).put("detail", detail)
                 .put("bounds", "${bounds.left},${bounds.top},${bounds.right},${bounds.bottom}"))
@@ -188,8 +282,7 @@ class AccessibilityAuditTest {
             val actionable = node.isClickable || node.isLongClickable || node.isCheckable ||
                 node.actionList.any { it.id == AccessibilityNodeInfo.ACTION_CLICK }
             if (actionable) {
-                controlsTop = minOf(controlsTop, bounds.top)
-                if (safeBounds != null && !safeBounds.contains(bounds))
+                if (screen == "kamera" && !safeBounds.contains(bounds))
                     issue("systemleisten", node, bounds, "Tippfläche außerhalb des sicheren Fensterbereichs")
                 val w = bounds.width() / density; val h = bounds.height() / density
                 if (w < 47.5f || h < 47.5f) issue("tippflaeche", node, bounds, "%.0f×%.0f dp".format(w, h))
@@ -201,26 +294,21 @@ class AccessibilityAuditTest {
             if ((bounds.bottom > window.bottom + 1 || bounds.top < window.top - 1) && !insideScrollable(node))
                 issue("abgeschnitten", node, bounds, "über den oberen oder unteren Fensterrand")
             val text = node.text?.toString().orEmpty()
-            if (text.isNotBlank() && shot != null) {
-                val ratio = contrast(shot, bounds)
+            if (text.isNotBlank() && image != null) {
+                val ratio = contrast(image, Rect(bounds).apply { offset(-origin[0], -origin[1]) })
                 val large = isLargeText(node, density)
                 if (ratio != null && ratio < (if (large) 3.0 else 4.5)) issue("kontrast", node, bounds, "≈%.1f:1".format(ratio))
             }
         }
-        shot?.let { image ->
-            // The camera preview can show the room: black it out above the controls and keep only
-            // the control panel in the saved picture. Measurements above used the original image.
-            val saved = if (screen == "kamera" && controlsTop != Int.MAX_VALUE) {
-                image.copy(Bitmap.Config.ARGB_8888, true).also { copy ->
-                    android.graphics.Canvas(copy).drawRect(0f, 0f, copy.width.toFloat(),
-                        (controlsTop - 24).coerceAtLeast(0).toFloat(), android.graphics.Paint().apply { color = android.graphics.Color.BLACK })
-                }
-            } else image
-            File(out, "$screen-$scale.png").outputStream().use { saved.compress(Bitmap.CompressFormat.PNG, 100, it) }
-            if (saved !== image) saved.recycle()
-            image.recycle()
-        }
+        val file = File(out, "$screen-$scale.png")
+        if (image == null) {
+            check(screen == "kamera")
+            check(!file.exists() || file.delete())
+        } else try {
+            file.outputStream().use { check(image.compress(Bitmap.CompressFormat.PNG, 100, it)) }
+        } finally { image.recycle() }
         return JSONObject().put("screen", screen).put("fontScale", scale).put("issues", issues)
+            .put("screenshot", if (image == null) "Bedienfeld nicht sicher begrenzt" else file.name)
     }
 
     /**
@@ -273,7 +361,7 @@ class AccessibilityAuditTest {
         return found
     }
 
-    private fun scrollTo(forward: Boolean = true, match: (AccessibilityNodeInfo) -> Boolean) {
+    private fun scrollTo(forward: Boolean = true, within: Rect? = null, match: (AccessibilityNodeInfo) -> Boolean) {
         repeat(8) {
             if (node(match) != null) return
             var largest: AccessibilityNodeInfo? = null
@@ -282,6 +370,7 @@ class AccessibilityAuditTest {
                 walk(root) { n ->
                     if (n.isScrollable && n.isVisibleToUser) {
                         val r = Rect().also { n.getBoundsInScreen(it) }
+                        if (within != null && !r.contains(within.centerX(), within.centerY())) return@walk
                         if (r.width() * r.height() > largestArea) { largest = n; largestArea = r.width() * r.height() }
                     }
                 }
@@ -308,17 +397,20 @@ class AccessibilityAuditTest {
         error("Zeitüberschreitung beim Warten auf die Ansicht")
     }
 
-    private fun shell(command: String): String =
-        automation.executeShellCommand(command).let { descriptor ->
+    private fun shell(command: String): String {
+        check(context.packageName == "de.buchradar.app.devicetest")
+        return automation.executeShellCommand(command).let { descriptor ->
             android.os.ParcelFileDescriptor.AutoCloseInputStream(descriptor).bufferedReader().use { it.readText() }
         }
+    }
 
     /**
      * Estimated contrast of text against its background: the most frequent colour in the
      * element is taken as background, the 10 % of pixels that differ most from it as text.
      */
     private fun contrast(shot: Bitmap, bounds: Rect): Double? {
-        val area = Rect(bounds).apply { intersect(0, 0, shot.width, shot.height) }
+        val area = Rect(bounds)
+        if (!area.intersect(0, 0, shot.width, shot.height)) return null
         if (area.width() < 4 || area.height() < 4) return null
         val step = max(1, min(area.width(), area.height()) / 40)
         val luminances = mutableListOf<Double>()

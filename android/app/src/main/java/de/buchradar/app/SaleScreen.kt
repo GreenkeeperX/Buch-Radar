@@ -156,34 +156,35 @@ fun SaleScreen(
                     val queued = book.isbn in pending
                     Card(colors = CardDefaults.cardColors(containerColor = if (selected) scheme.surfaceContainer else scheme.surface),
                         modifier = Modifier.fillMaxWidth()) {
-                        Row(
+                        Column(
                             Modifier.fillMaxWidth().heightIn(min = 64.dp)
                                 .toggleable(value = selected, role = Role.Checkbox, onValueChange = { on ->
                                     val current = chosenIds.orEmpty()
                                     onChosenChange(if (on) current + book.id else current - book.id)
                                 })
-                                .padding(horizontal = 8.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                                .padding(horizontal = 8.dp, vertical = 10.dp)
                         ) {
-                            // The whole row toggles; the box only shows the state.
-                            Checkbox(checked = selected, onCheckedChange = null, modifier = Modifier.padding(horizontal = 8.dp))
-                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text(book.title ?: "Unbekannter Titel", style = MaterialTheme.typography.titleMedium)
-                                book.author?.takeIf(String::isNotBlank)?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant) }
-                                Text(BookInputFormat.screenIsbn(book.isbn), style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant,
-                                    softWrap = false, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                                when {
-                                    queued && paused != null -> Text("Neuprüfung angehalten", style = MaterialTheme.typography.bodyMedium, color = scheme.error)
-                                    queued -> Text("Wird gerade neu geprüft …", style = MaterialTheme.typography.bodyMedium, color = scheme.primary)
-                                    SaleList.needsRecheck(book, now) -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        Icon(Icons.Filled.Warning, contentDescription = null, tint = scheme.tertiary, modifier = Modifier.size(18.dp))
-                                        Text(book.lastCheckedAt?.let { "Preis vom ${formatDateTime(it)}" + if (book.lastAttemptStatus == "ERROR") ", letzte Prüfung fehlgeschlagen" else "" }
-                                            ?: "Noch nicht geprüft", style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                // The whole row toggles; the box only shows the state.
+                                Checkbox(checked = selected, onCheckedChange = null, modifier = Modifier.padding(horizontal = 8.dp))
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(book.title ?: "Unbekannter Titel", style = MaterialTheme.typography.titleMedium)
+                                    book.author?.takeIf(String::isNotBlank)?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant) }
+                                    when {
+                                        queued && paused != null -> Text("Neuprüfung angehalten", style = MaterialTheme.typography.bodyMedium, color = scheme.error)
+                                        queued -> Text("Wird gerade neu geprüft …", style = MaterialTheme.typography.bodyMedium, color = scheme.primary)
+                                        SaleList.needsRecheck(book, now) -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                            Icon(Icons.Filled.Warning, contentDescription = null, tint = scheme.tertiary, modifier = Modifier.size(18.dp))
+                                            Text(book.lastCheckedAt?.let { "Preis vom ${formatDateTime(it)}" + if (book.lastAttemptStatus == "ERROR") ", letzte Prüfung fehlgeschlagen" else "" }
+                                                ?: "Noch nicht geprüft", style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+                                        }
                                     }
                                 }
+                                Text(formatEuro((BookListQuery.offeredCents(book) ?: 0).toLong()), Modifier.padding(start = 8.dp, end = 4.dp),
+                                    style = MaterialTheme.typography.titleMedium, color = status.success, fontWeight = FontWeight.Bold)
                             }
-                            Text(formatEuro((BookListQuery.offeredCents(book) ?: 0).toLong()), Modifier.padding(start = 8.dp, end = 4.dp),
-                                style = MaterialTheme.typography.titleMedium, color = status.success, fontWeight = FontWeight.Bold)
+                            Text("ISBN ${BookInputFormat.displayIsbn(book.isbn)}", Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                                style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
                         }
                     }
                 }
