@@ -120,3 +120,8 @@ Lizenz zugänglich sein. Private Änderungen müssen nicht veröffentlicht werde
 Verwendete Bibliothek mit eigenem Lizenzhinweis: [OpenCV](https://opencv.org)
 (Apache License 2.0, GPL-3.0-kompatibel) für die Cover-Bestätigung (ORB-Merkmale
 und RANSAC-Homographie, nur auf dem Gerät).
+[Tesseract4Android](https://github.com/adaptech-cz/Tesseract4Android) mit Tesseract
+und Leptonica sowie die Sprachmodelle `deu`, `deu_latf` aus `tessdata_best` und
+`deu` aus `tessdata_fast` (alle Apache License 2.0) lesen beim Einzelbuch alte
+Schriften als Rückfallstufe. Die Modelle werden beim Bauen mit fester Prüfsumme
+geladen und nicht im Repository gespeichert.

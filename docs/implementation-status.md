@@ -250,3 +250,15 @@ nach Messung an freigegebenen Scanbeispielen als bestätigt.
   einer falschen Ausgabe oder eines anderen Buchs; Grenzen: Wirkung nur, wenn der Katalog ein Cover
   derselben Gestaltung liefert. Opt-in-Messung: `CoverBenchmarkTest` mit `-e coverBenchmark true`.
 - Die App enthält nur noch arm64-v8a-Bibliotheken (Zielgerät Pixel 9a); OpenCV kostet etwa 24 MB in der APK.
+
+## Alte Schrift (Branch claude/fraktur)
+
+- Rückfallstufe mit Tesseract (Modelle `deu_latf`, `deu` aus tessdata_best, `deu` fast zum Finden
+  des Titelbereichs) nur beim Einzelbuch mit Kamerabild (gleiches Gate wie die Cover-Bestätigung),
+  nie nach ISBN und nur, wenn kein Kandidat mindestens 60 Textähnlichkeit hat. Zusätzlich Knopf
+  „Alte Schrift lesen“ bei den Treffern. Gelesen wird nur der Titelbereich (größte Zeilen) eines
+  Standbilds; die erste Trefferliste bleibt sichtbar, Abbrechen über das Schließen des Hinweises.
+- Messung am Pixel mit dem echten Code auf 58 künstlichen Covern in 7 Schriftklassen (lokal, nicht
+  im Repo): richtiger Titel 44 → 52 von 58 (Scan) und 37 → 42 von 58 (Handyfoto-Variante);
+  Kontroll-Cover lösen nie aus; Median etwa 0,5 s je Lesung. Effekt- und Kontrastschriften bleiben schwach.
+- Opt-in-Messung: `FrakturBenchmarkTest` mit `-e frakturBenchmark true`. Die App wächst um etwa 26 MB.

@@ -458,9 +458,9 @@ internal fun unrotatePiece(piece: OcrPiece, degrees: Int, width: Int, height: In
     return piece.copy(left = points.minOf { it.first }, right = points.maxOf { it.first }, top = points.minOf { it.second }, bottom = points.maxOf { it.second }, angle = angle)
 }
 
-/** Small copy for cover confirmation (max. 1000 px side); the analysis frame itself is recycled. */
+/** Copy for cover confirmation and old-script reading (max. 1600 px side, as measured); the analysis frame itself is recycled. */
 private fun coverCopy(image: Bitmap): Bitmap? = runCatching {
-    val scale = minOf(1f, 1000f / maxOf(image.width, image.height))
+    val scale = minOf(1f, 1600f / maxOf(image.width, image.height))
     Bitmap.createScaledBitmap(image, (image.width * scale).toInt().coerceAtLeast(1), (image.height * scale).toInt().coerceAtLeast(1), true)
         .let { if (it === image) image.copy(Bitmap.Config.ARGB_8888, false) else it }
 }.getOrNull()

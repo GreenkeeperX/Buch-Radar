@@ -28,7 +28,15 @@ class BookSessionViewModel(application: Application) : AndroidViewModel(applicat
     /** Hands the frame to the caller, who then owns and recycles it. */
     fun takeCoverFrame(): android.graphics.Bitmap? = coverFrame.also { coverFrame = null }
     var coverJob: kotlinx.coroutines.Job? = null
-    override fun onCleared() { coverJob?.cancel(); offerCoverFrame(null); super.onCleared() }
+    /** Frame of the single book behind the shown candidates, for "Alte Schrift lesen"; memory only. */
+    var resultFrame: android.graphics.Bitmap? = null
+        private set
+    fun holdResultFrame(frame: android.graphics.Bitmap?) { resultFrame?.takeIf { it !== frame }?.recycle(); resultFrame = frame }
+    val oldScriptRead = mutableStateOf(false)
+    var oldScriptJob: kotlinx.coroutines.Job? = null
+    /** Each search gets a number; late results of an older search are dropped. */
+    var searchGeneration = 0L
+    override fun onCleared() { coverJob?.cancel(); oldScriptJob?.cancel(); offerCoverFrame(null); holdResultFrame(null); super.onCleared() }
     val shelfReviewOpen = mutableStateOf(false)
     val shelfReview = ShelfReviewController(viewModelScope,
         AtomicShelfReviewStore(File(application.noBackupFilesDir, "shelf-review.json"))) { text ->

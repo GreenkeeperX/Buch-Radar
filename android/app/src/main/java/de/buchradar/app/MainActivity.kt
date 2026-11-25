@@ -154,6 +154,9 @@ import de.buchradar.app.scanner.BookScannerView
 import de.buchradar.app.scanner.ScannerMode
 import de.buchradar.app.cover.CoverConfirmation
 import de.buchradar.app.cover.CoverVerifier
+import de.buchradar.app.fraktur.FrakturFallback
+import de.buchradar.app.fraktur.FrakturReader
+import de.buchradar.app.network.CatalogBook
 import de.buchradar.app.ui.BuchRadarTheme
 import de.buchradar.app.ui.InfoBanner
 import kotlinx.coroutines.launch
@@ -287,6 +290,27 @@ class MainActivity : ComponentActivity() {
                         if (outcome.isFailure) message = "Rückgängig machen fehlgeschlagen."
                     }
                 }
+                // Works on its own copy, so a newer search may release the shown frame at any time.
+                val confirmCovers: (android.graphics.Bitmap, List<CatalogBook>) -> Unit = { frame, found ->
+                    val copy = runCatching { frame.copy(android.graphics.Bitmap.Config.ARGB_8888, false) }.getOrNull()
+                    if (copy != null) session.coverJob = scope.launch {
+                        try {
+                            val confirmed = catchingOperation { CoverVerifier.confirm(context, copy, found) }.getOrDefault(emptySet())
+                            // A newer search replaced the list meanwhile: keep the newer one untouched.
+                            if (coverCandidates === found) coverCandidates = CoverConfirmation.apply(found, confirmed)
+                        } finally { copy.recycle() }
+                    }
+                }
+                /** Reads the title area with the old-script models and searches again; null keeps the first result. */
+                suspend fun readOldScript(frame: android.graphics.Bitmap, previous: List<CatalogBook>, generation: Long): List<CatalogBook>? {
+                    session.oldScriptRead.value = true
+                    val copy = runCatching { frame.copy(android.graphics.Bitmap.Config.ARGB_8888, false) }.getOrNull() ?: return null
+                    val text = try { FrakturReader.read(context, copy) } finally { copy.recycle() }
+                    if (text.isNullOrBlank() || generation != session.searchGeneration) return null
+                    val again = catchingOperation { CatalogAccess.report { BookCatalog.findByRecognizedText(text) } }.getOrNull()?.value.orEmpty()
+                    // Only replace the list when the old-script reading found a fitting hit.
+                    return again.takeIf { list -> list.any { (it.textSimilarity ?: 0) >= FrakturFallback.FITTING_SIMILARITY } }
+                }
                 val submitInput: (String) -> Unit = { rawInput ->
                     keyboard?.hide()
                     val isbn = BookInputFormat.parseIsbn(rawInput) ?: BookIdentity.unambiguousIsbn(rawInput)?.let(BookInputFormat::parseIsbn)
@@ -346,27 +370,39 @@ class MainActivity : ComponentActivity() {
                         message = "Suche nach Titel und Autor …"
                         // A camera frame belongs to this one search; typed searches have none.
                         val frame = session.takeCoverFrame()
-                        session.coverJob?.cancel()
-                        scope.launch {
+                        session.coverJob?.cancel(); session.oldScriptJob?.cancel()
+                        session.holdResultFrame(frame)
+                        session.oldScriptRead.value = false
+                        val generation = ++session.searchGeneration
+                        session.oldScriptJob = scope.launch {
+                          try {
                             val result = catchingOperation {
                                 CatalogAccess.report { BookCatalog.findByRecognizedText(rawInput) }
                             }
-                            coverCandidates = result.getOrNull()?.value.orEmpty()
-                            val found = coverCandidates
-                            if (frame != null && found.isNotEmpty()) session.coverJob = scope.launch {
-                                try {
-                                    val confirmed = catchingOperation { CoverVerifier.confirm(context, frame, found) }.getOrDefault(emptySet())
-                                    // A newer search replaced the list meanwhile: keep the newer one untouched.
-                                    if (coverCandidates === found) coverCandidates = CoverConfirmation.apply(found, confirmed)
-                                } finally { frame.recycle() }
-                            } else frame?.recycle()
+                            if (generation != session.searchGeneration) return@launch
+                            var found = result.getOrNull()?.value.orEmpty()
+                            coverCandidates = found
+                            // Old-script fallback: only a single book in focus, no ISBN, no fitting hit. The first
+                            // result stays visible; cancelling the reading keeps it.
+                            if (frame != null && FrakturFallback.shouldRun(hasSingleBookFrame = true, usedIsbn = false, candidates = found)) {
+                                message = OLD_SCRIPT_PROGRESS
+                                val better = readOldScript(frame, found, generation)
+                                if (generation != session.searchGeneration || coverCandidates !== found) return@launch
+                                if (better != null) { found = better; coverCandidates = better }
+                            }
+                            if (frame != null && found.isNotEmpty()) confirmCovers(frame, found)
                             message = when {
                                 result.isFailure -> "Buchkatalog nicht erreichbar. Bitte Internetverbindung prüfen."
                                 result.getOrNull()?.warnings?.isNotEmpty() == true -> result.getOrNull()?.warnings?.joinToString("\n")
                                 coverCandidates.isEmpty() -> "Keine passenden Treffer gefunden. Prüfe den Text oder erfasse das Buch manuell."
                                 else -> null
                             }
-                            singleSearchBusy = false
+                          } finally {
+                            if (generation == session.searchGeneration) {
+                                singleSearchBusy = false
+                                if (message == OLD_SCRIPT_PROGRESS) message = null
+                            }
+                          }
                         }
                     } else {
                         message = "Bitte eine gültige ISBN oder einen Buchtitel eingeben."
@@ -452,6 +488,7 @@ class MainActivity : ComponentActivity() {
                 }
                 val closeCandidates: () -> Unit = {
                     coverCandidates = emptyList()
+                    session.oldScriptJob?.cancel(); session.holdResultFrame(null)
                 }
                 val visibleBooks = remember(books, soldBooks, showSoldBooks, statusFilter, sortMode, searchInput) {
                     // Status chips exist only for active books; a filter chosen there must not hide sold books.
@@ -744,7 +781,29 @@ class MainActivity : ComponentActivity() {
                                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                                 keyboardActions = KeyboardActions(onSearch = { if (searchInput.isNotBlank() && !isSearching) { coverCandidates = emptyList(); submitInput(searchInput) } })
                             )
-                            message?.let { InfoBanner(it, onDismiss = { message = null }) }
+                            message?.let { InfoBanner(it, onDismiss = { if (it == OLD_SCRIPT_PROGRESS) session.oldScriptJob?.cancel(); message = null }) }
+                            // Manual old-script reading for the photographed single book, when not yet tried.
+                            val frameForOldScript = session.resultFrame
+                            if (frameForOldScript != null && !session.oldScriptRead.value && !isSearching && coverCandidates.none { it.coverConfirmed })
+                                OutlinedButton(onClick = {
+                                    val generation = session.searchGeneration
+                                    session.oldScriptJob?.cancel()
+                                    session.oldScriptJob = scope.launch {
+                                        singleSearchBusy = true
+                                        message = OLD_SCRIPT_PROGRESS
+                                        val shown = coverCandidates
+                                        try {
+                                            val list = readOldScript(frameForOldScript, shown, generation)
+                                            if (generation == session.searchGeneration && coverCandidates === shown) {
+                                                if (list != null) { coverCandidates = list; confirmCovers(frameForOldScript, list) }
+                                                message = if (list == null) "Auch mit alter Schrift kein passender Treffer." else null
+                                            }
+                                        } finally {
+                                            singleSearchBusy = false
+                                            if (message == OLD_SCRIPT_PROGRESS) message = null
+                                        }
+                                    }
+                                }, modifier = Modifier.fillMaxWidth().heightIn(min = ImportantButtonHeight)) { Text("Alte Schrift lesen") }
                             Text("ISBN und Ausgabe vergleichen.",
                                 style = MaterialTheme.typography.bodyMedium, color = colorScheme.onSurfaceVariant)
                             LazyColumn(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -937,7 +996,7 @@ class MainActivity : ComponentActivity() {
                         // keyboard height minus the navigation bar, which the scaffold padding already covers.
                         Column(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.ime.exclude(WindowInsets.navigationBars))
                             .padding(horizontal = 16.dp).padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            message?.let { InfoBanner(it, compact = true, onDismiss = { message = null }) }
+                            message?.let { InfoBanner(it, compact = true, onDismiss = { if (it == OLD_SCRIPT_PROGRESS) session.oldScriptJob?.cancel(); message = null }) }
                             if (!selectionMode) {
                                 // 48 dp instead of the 56 dp OutlinedTextField: same look, less vertical padding.
                                 val searchInteraction = remember { MutableInteractionSource() }
@@ -1134,3 +1193,5 @@ private fun EmptyState(title: String, text: String, action: Pair<String, () -> U
         action?.let { (label, onClick) -> OutlinedButton(modifier = Modifier.heightIn(min = ActionButtonHeight), onClick = onClick) { Text(label) } }
     }
 }
+
+private const val OLD_SCRIPT_PROGRESS = "Alte Schrift wird gelesen … (zum Abbrechen schließen)"
