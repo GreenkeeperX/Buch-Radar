@@ -45,12 +45,8 @@ nach Messung an freigegebenen Scanbeispielen als bestätigt.
 3. Feldherkunft dauerhaft am Buch speichern und Budgetverteilung zwischen Quellen
    messen; Gesamtbudget und sichtbare Teilfehler/Konflikte sind ab 0.13 implementiert.
    Weitere Quellen erst nach geprüfter Schnittstelle und nachgewiesenem Nutzen.
-4. Einen künftigen Coververgleich für Einzelbücher an Referenzbildern prüfen.
-   Der bisherige Vergleich entfiel nach der Messung (AUC ca. 0,50–0,66, kein
-   brauchbarer Schwellenwert). Die Suche übernimmt die Textreihenfolge.
-   Die separat getestete Regel `coverEvidenceAllowed` lässt eine künftige Prüfung
-   im Buchmodus oder bei einem erkannten Einzelcover im Automatikmodus zu.
-   Regalscans und Regalkorrekturen sind ausgeschlossen.
+4. Cover-Bestätigung (ORB) mit mehr echten Fotos nachmessen; Schwelle 120 hat nur
+   einen knappen Abstand zur stärksten Fehlbestätigung (110). Details unten.
 5. Hauptansicht weiter in eigenständige Ansichten und Aktionen aufteilen;
    Großschrift, TalkBack, Rotation und Prozesswiederherstellung automatisiert prüfen.
 6. Verkaufsvorbereitung mit Auswahl und teilbarer Liste, optionale Bestandskopien

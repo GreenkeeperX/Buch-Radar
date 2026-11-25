@@ -16,13 +16,13 @@ object CoverConfirmation {
 
     /**
      * Marks [confirmedIds] and lets a confirmed candidate move ahead only of other editions of the same
-     * title; candidates of other titles keep their text order and positions.
+     * work (title and author); all other candidates keep their text order and positions.
      */
     fun apply(candidates: List<CatalogBook>, confirmedIds: Set<String>): List<CatalogBook> {
         if (confirmedIds.isEmpty()) return candidates
         val marked = candidates.map { if (it.candidateId in confirmedIds) it.copy(coverConfirmed = true) else it }
         val result = marked.toMutableList()
-        marked.groupBy { titleKey(it) }.values.filter { group -> group.size > 1 && group.any { it.coverConfirmed } }.forEach { group ->
+        marked.filter { workKey(it) != null }.groupBy { workKey(it) }.values.filter { group -> group.size > 1 && group.any { it.coverConfirmed } }.forEach { group ->
             val slots = group.map { book -> marked.indexOfFirst { it.candidateId == book.candidateId } }.sorted()
             val reordered = group.filter { it.coverConfirmed } + group.filterNot { it.coverConfirmed }
             slots.zip(reordered).forEach { (slot, book) -> result[slot] = book }
@@ -30,6 +30,13 @@ object CoverConfirmation {
         return result
     }
 
-    private fun titleKey(book: CatalogBook): String =
-        BookListQuery.fold(book.title).trim()
+    /**
+     * Same work = same folded title and same author surname. Without an author the work is ambiguous
+     * (homonymous titles), so such a candidate is only marked, never moved.
+     */
+    private fun workKey(book: CatalogBook): String? {
+        val surname = book.author?.split(',', ';', '&')?.firstOrNull()?.let { BookListQuery.fold(it).trim().split(' ').lastOrNull() }
+            ?.takeIf(String::isNotBlank) ?: return null
+        return BookListQuery.fold(book.title).trim() + "|" + surname
+    }
 }

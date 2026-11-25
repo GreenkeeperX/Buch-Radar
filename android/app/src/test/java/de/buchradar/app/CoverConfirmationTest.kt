@@ -8,7 +8,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CoverConfirmationTest {
-    private fun book(title: String, isbn: String) = CatalogBook(title, "A", 2000, isbn = isbn)
+    private fun book(title: String, isbn: String, author: String? = "Erika Muster") = CatalogBook(title, author, 2000, isbn = isbn)
 
     @Test fun thresholdIs120Inliers() {
         assertFalse(CoverConfirmation.confirmed(null))
@@ -39,5 +39,18 @@ class CoverConfirmationTest {
         assertEquals(3, result.size)
         assertTrue(result[2].coverConfirmed)
         assertFalse(result[0].coverConfirmed || result[1].coverConfirmed)
+    }
+
+    @Test fun sameTitleOtherAuthorNeverSwaps() {
+        val list = listOf(book("Heimkehr", "1", "Anna Alt"), book("Heimkehr", "2", "Bert Neu"))
+        val result = CoverConfirmation.apply(list, setOf("isbn:2"))
+        assertEquals(listOf("isbn:1", "isbn:2"), result.map { it.candidateId })
+        assertTrue(result[1].coverConfirmed)
+    }
+
+    @Test fun missingAuthorOnlyMarks() {
+        val list = listOf(book("Heimkehr", "1", null), book("Heimkehr", "2", null))
+        val result = CoverConfirmation.apply(list, setOf("isbn:2"))
+        assertEquals(listOf("isbn:1", "isbn:2"), result.map { it.candidateId })
     }
 }

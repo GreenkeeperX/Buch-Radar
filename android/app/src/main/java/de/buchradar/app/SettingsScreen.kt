@@ -138,6 +138,16 @@ fun SettingsScreen(theme: String, onTheme: (String) -> Unit, onClose: () -> Unit
                         item { de.buchradar.app.ui.SectionTitle("Online-Suche"); Text("Suchtext oder ISBN werden an Open Library, Google Books und bei Bedarf die Deutsche Nationalbibliothek gesendet. Die Dienste erhalten dabei auch die Netzwerkadresse. Momox erhält die zu prüfende ISBN. Suche und Ankaufspreise benötigen Internet.") }
                         item { de.buchradar.app.ui.SectionTitle("Deine Daten"); Text("Die Bücherliste bleibt lokal. Offene Regal-Funde werden mit erkanntem Text und Katalogtreffern lokal gespeichert, ohne Kameraaufnahmen. Sie sind nicht Teil des Bücherlisten-Exports oder der Systemsicherung. Android kann Einstellungen gemäß deinen Geräteoptionen sichern. Bücherliste, Diagnose und offene Prüfaufträge sind von der Systemsicherung ausgeschlossen. Für einen Gerätewechsel bitte die Bücherliste exportieren und auf dem neuen Gerät importieren. Exportierte Bücherlisten enthalten deinen privaten Bestand.") }
                         item { de.buchradar.app.ui.SectionTitle("Ankauf"); Text("Bücher-Radar verkauft keine Bücher automatisch. Ein angezeigtes Angebot ersetzt nicht die Prüfung von Ausgabe und Zustand beim Verkaufsabschluss bei Momox.") }
+                        item {
+                            // License texts of bundled third-party components ship inside the app.
+                            de.buchradar.app.ui.SectionTitle("Lizenzen")
+                            val notice = remember { runCatching { context.assets.open("licenses/NOTICE.txt").bufferedReader().use { it.readText() } }.getOrDefault("") }
+                            var showApache by rememberSaveable { mutableStateOf(false) }
+                            Text(notice.trim())
+                            TextButton(onClick = { showApache = !showApache }) { Text(if (showApache) "Apache-Lizenztext ausblenden" else "Apache-Lizenztext anzeigen") }
+                            if (showApache) Text(remember { runCatching { context.assets.open("licenses/APACHE-2.0.txt").bufferedReader().use { it.readText() } }.getOrDefault("") },
+                                style = MaterialTheme.typography.bodySmall)
+                        }
                     }
                 }
             }

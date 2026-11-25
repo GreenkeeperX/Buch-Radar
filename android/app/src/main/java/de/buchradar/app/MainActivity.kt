@@ -18,9 +18,11 @@ import kotlinx.coroutines.withTimeoutOrNull
 
 import androidx.compose.foundation.verticalScroll
 
-import androidx.compose.ui.platform.LocalConfiguration
-
-import android.content.res.Configuration
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.ui.unit.Dp
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -36,10 +38,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.isImeVisible
-import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.exclude
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -125,7 +123,6 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.graphics.SolidColor
@@ -139,6 +136,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import de.buchradar.app.data.BookEntity
@@ -148,15 +147,12 @@ import de.buchradar.app.domain.BookIdentity
 import de.buchradar.app.domain.BookInputFormat
 import de.buchradar.app.domain.BookListQuery
 import de.buchradar.app.domain.catchingOperation
-import de.buchradar.app.network.BookCatalog
-import de.buchradar.app.network.CatalogAccess
+import de.buchradar.app.domain.BookInput
+import de.buchradar.app.domain.SaleList
+import kotlinx.coroutines.delay
 import de.buchradar.app.scanner.BookScannerView
+import de.buchradar.app.scanner.ShelfScanCorrection
 import de.buchradar.app.scanner.ScannerMode
-import de.buchradar.app.cover.CoverConfirmation
-import de.buchradar.app.cover.CoverVerifier
-import de.buchradar.app.fraktur.FrakturFallback
-import de.buchradar.app.fraktur.FrakturReader
-import de.buchradar.app.network.CatalogBook
 import de.buchradar.app.ui.BuchRadarTheme
 import de.buchradar.app.ui.InfoBanner
 import kotlinx.coroutines.launch
@@ -194,9 +190,6 @@ class MainActivity : ComponentActivity() {
                 val pendingIsbns by dao.observePendingIsbns().collectAsState(initial = emptyList())
                 val pendingSet = remember(pendingIsbns) { pendingIsbns.toSet() }
                 val bookListState = rememberLazyListState()
-                val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
-                // From 130 % system font the list gets the same space-saving layout as landscape.
-                val largeFont = LocalConfiguration.current.fontScale >= 1.3f
                 var filterMenuOpen by remember { mutableStateOf(false) }
                 // While typing (field focused and keyboard shown), the navigation steps aside so the bottom
                 // search sits right above the keyboard; it returns as soon as the keyboard closes.
@@ -207,10 +200,12 @@ class MainActivity : ComponentActivity() {
                 val snackbar = remember { SnackbarHostState() }
                 val keyboard = LocalSoftwareKeyboardController.current
 
-                var searchInput by session.searchInput
+                val search = session.search
+                var searchInput by search.input
+                val inputAction = remember(searchInput) { BookInputFormat.classify(searchInput) }
                 val hasSearchInput = searchInput.isNotEmpty()
                 var lastListQuery by remember { mutableStateOf(searchInput) }
-                var singleSearchBusy by session.isSearching
+                val singleSearchBusy = search.busy
                 val shelfState by session.shelfReview.state.collectAsState()
                 val shelfBusy by session.shelfReview.busy.collectAsState()
                 val shelfError by session.shelfReview.error.collectAsState()
@@ -219,13 +214,13 @@ class MainActivity : ComponentActivity() {
                 val isCheckingMomox = checkRun?.let { it.finishedAt == null && it.completed < it.total } == true
                 val momoxProgress = checkRun?.completed ?: 0
                 val momoxTotal = checkRun?.total ?: 0
-                var message by session.message
+                var message by search.message
                 var detailsBook by session.detailsBook
                 var manualEntry by session.manualEntry
                 var editingBook by session.editingBook
                 var deletingBook by session.deletingBook
                 var scannerOpen by session.scannerOpen
-                var coverCandidates by session.coverCandidates
+                val coverCandidates = search.candidates
                 var shelfReviewOpen by session.shelfReviewOpen
                 var discardShelfConfirm by remember { mutableStateOf(false) }
                 var shelfActionsOpen by remember { mutableStateOf(false) }
@@ -235,16 +230,13 @@ class MainActivity : ComponentActivity() {
                 var shelfEditQuery by session.shelfEditQuery
                 var shelfEditText by session.shelfEditText
                 var scannerStartMode by session.scannerStartMode
-                var momoxSummary by session.momoxSummary
-                var summaryExpanded by session.summaryExpanded
-                var dismissedSummaryRun by session.dismissedSummaryRun
                 var settingsOpen by session.settingsOpen
                 var saleOpen by session.saleOpen
-                var showSoldBooks by session.showSoldBooks
+                var showSoldBooks by search.showSold
                 var selectionMode by session.selectionMode
                 var selectedIsbns by session.selectedIsbns
-                var statusFilter by session.statusFilter
-                var sortMode by session.sortMode
+                var statusFilter by search.statusFilter
+                var sortMode by search.sortMode
                 var sortMenuOpen by session.sortMenuOpen
                 var momoxCheckDialogOpen by session.momoxCheckDialogOpen
                 var momoxCheckMode by session.momoxCheckMode
@@ -261,6 +253,7 @@ class MainActivity : ComponentActivity() {
                 }
                 val openScanner: (ScannerMode) -> Unit = { mode ->
                     keyboard?.hide()
+                    search.leave()
                     scannerStartMode = mode
                     if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) scannerOpen = true
                     else cameraPermissionRequest.launch(Manifest.permission.CAMERA)
@@ -290,124 +283,18 @@ class MainActivity : ComponentActivity() {
                         if (outcome.isFailure) message = "Rückgängig machen fehlgeschlagen."
                     }
                 }
-                // Works on its own copy, so a newer search may release the shown frame at any time.
-                val confirmCovers: (android.graphics.Bitmap, List<CatalogBook>) -> Unit = { frame, found ->
-                    val copy = runCatching { frame.copy(android.graphics.Bitmap.Config.ARGB_8888, false) }.getOrNull()
-                    if (copy != null) session.coverJob = scope.launch {
-                        try {
-                            val confirmed = catchingOperation { CoverVerifier.confirm(context, copy, found) }.getOrDefault(emptySet())
-                            // A newer search replaced the list meanwhile: keep the newer one untouched.
-                            if (coverCandidates === found) coverCandidates = CoverConfirmation.apply(found, confirmed)
-                        } finally { copy.recycle() }
-                    }
-                }
-                /** Reads the title area with the old-script models and searches again; null keeps the first result. */
-                suspend fun readOldScript(frame: android.graphics.Bitmap, previous: List<CatalogBook>, generation: Long): List<CatalogBook>? {
-                    session.oldScriptRead.value = true
-                    val copy = runCatching { frame.copy(android.graphics.Bitmap.Config.ARGB_8888, false) }.getOrNull() ?: return null
-                    val text = try { FrakturReader.read(context, copy) } finally { copy.recycle() }
-                    if (text.isNullOrBlank() || generation != session.searchGeneration) return null
-                    val again = catchingOperation { CatalogAccess.report { BookCatalog.findByRecognizedText(text) } }.getOrNull()?.value.orEmpty()
-                    // Only replace the list when the old-script reading found a fitting hit.
-                    return again.takeIf { list -> list.any { (it.textSimilarity ?: 0) >= FrakturFallback.FITTING_SIMILARITY } }
-                }
-                val submitInput: (String) -> Unit = { rawInput ->
+                val submitInput: (BookInput) -> Unit = { action ->
                     keyboard?.hide()
-                    val isbn = BookInputFormat.parseIsbn(rawInput) ?: BookIdentity.unambiguousIsbn(rawInput)?.let(BookInputFormat::parseIsbn)
-                    if (isbn != null) {
-                        val compact = isbn.toCompactString()
-                        when {
-                            books.any { it.isbn == compact } -> {
-                                message = "Dieses Buch ist bereits in deiner Liste."
-                                session.scrollToBookId.value = books.first { it.isbn == compact }.id
-                                statusFilter = BookListQuery.FILTER_ALL
-                                searchInput = ""
-                            }
-                            soldBooks.any { it.isbn == compact } -> {
-                                message = "Dieses Buch liegt im Bereich „Verkauft“."
-                                showSoldBooks = true
-                            }
-                            else -> {
-                                showSoldBooks = false
-                                singleSearchBusy = true
-                                message = "Suche Titel und Buchdaten …"
-                                scope.launch {
-                                    val lookup = catchingOperation { CatalogAccess.report { BookCatalog.findByIsbn(compact) } }
-                                    val metadata = lookup.getOrNull()?.value
-                                    if (metadata != null && metadata.conflictingFields.any { it == "title" || it == "author" }) {
-                                        coverCandidates = listOf(metadata)
-                                        singleSearchBusy = false
-                                        message = "Die Quellen nennen unterschiedliche Titel oder Autoren zur ISBN. Bitte die Buchdaten vergleichen und den Treffer bestätigen."
-                                        return@launch
-                                    }
-                                    val newBook = BookEntity(isbn = compact, title = metadata?.title, author = metadata?.author, publicationYear = metadata?.publicationYear, coverUrl = metadata?.coverUrl, metadataSource = metadata?.sources?.joinToString())
-                                    val saved = catchingOperation { dao.insert(newBook) }
-                                    if (saved.isFailure) {
-                                        singleSearchBusy = false
-                                        message = "Buch konnte nicht gespeichert werden. Bitte erneut versuchen."
-                                        return@launch
-                                    }
-                                    searchInput = ""
-                                    statusFilter = BookListQuery.FILTER_ALL
-                                    sortMode = BookListQuery.SORT_RECENT
-                                    singleSearchBusy = false
-                                    message = when {
-                                        saved.getOrNull() == -1L -> "Dieses Buch ist bereits gespeichert."
-                                        lookup.isFailure -> "Katalog nicht erreichbar. ISBN gespeichert; Titel und Autor kannst du ergänzen."
-                                        metadata == null -> "ISBN gespeichert, aber im Katalog nicht gefunden. Titel und Autor kannst du ergänzen."
-                                        else -> listOfNotNull("Hinzugefügt: ${metadata.title}",
-                                            "Abweichende Katalogangaben – Ausgabe prüfen.".takeIf { metadata.conflictingFields.isNotEmpty() },
-                                            lookup.getOrNull()?.warnings?.joinToString(" ")?.takeIf(String::isNotBlank)
-                                        ).joinToString("\n")
-                                    }
-                                    if (saved.getOrNull() != -1L) session.scrollToBookId.value = newBook.id
-                                }
-                            }
-                        }
-                    } else if (rawInput.any(Char::isLetter)) {
-                        showSoldBooks = false
-                        singleSearchBusy = true
-                        message = "Suche nach Titel und Autor …"
-                        // A camera frame belongs to this one search; typed searches have none.
-                        val frame = session.takeCoverFrame()
-                        session.coverJob?.cancel(); session.oldScriptJob?.cancel()
-                        session.holdResultFrame(frame)
-                        session.oldScriptRead.value = false
-                        val generation = ++session.searchGeneration
-                        session.oldScriptJob = scope.launch {
-                          try {
-                            val result = catchingOperation {
-                                CatalogAccess.report { BookCatalog.findByRecognizedText(rawInput) }
-                            }
-                            if (generation != session.searchGeneration) return@launch
-                            var found = result.getOrNull()?.value.orEmpty()
-                            coverCandidates = found
-                            // Old-script fallback: only a single book in focus, no ISBN, no fitting hit. The first
-                            // result stays visible; cancelling the reading keeps it.
-                            if (frame != null && FrakturFallback.shouldRun(hasSingleBookFrame = true, usedIsbn = false, candidates = found)) {
-                                message = OLD_SCRIPT_PROGRESS
-                                val better = readOldScript(frame, found, generation)
-                                if (generation != session.searchGeneration || coverCandidates !== found) return@launch
-                                if (better != null) { found = better; coverCandidates = better }
-                            }
-                            if (frame != null && found.isNotEmpty()) confirmCovers(frame, found)
-                            message = when {
-                                result.isFailure -> "Buchkatalog nicht erreichbar. Bitte Internetverbindung prüfen."
-                                result.getOrNull()?.warnings?.isNotEmpty() == true -> result.getOrNull()?.warnings?.joinToString("\n")
-                                coverCandidates.isEmpty() -> "Keine passenden Treffer gefunden. Prüfe den Text oder erfasse das Buch manuell."
-                                else -> null
-                            }
-                          } finally {
-                            if (generation == session.searchGeneration) {
-                                singleSearchBusy = false
-                                if (message == OLD_SCRIPT_PROGRESS) message = null
-                            }
-                          }
-                        }
-                    } else {
-                        message = "Bitte eine gültige ISBN oder einen Buchtitel eingeben."
-                    }
+                    search.submit(action, books, soldBooks, insert = dao::insert)
                 }
+                val submitField: () -> Unit = {
+                    if (showSoldBooks) keyboard?.hide()
+                    else if (searchInput.isNotBlank() && !isSearching) submitInput(inputAction)
+                }
+                val searchKeyboardOptions = KeyboardOptions(
+                    imeAction = if (!showSoldBooks && inputAction is BookInput.AddIsbn) ImeAction.Done else ImeAction.Search
+                )
+                val searchKeyboardActions = KeyboardActions(onDone = { submitField() }, onSearch = { submitField() })
                 val runMomoxCheck: (List<BookEntity>) -> Unit = { snapshot ->
                     if (snapshot.isEmpty()) message = "Für diese Auswahl gibt es keine zu prüfenden Bücher."
                     else scope.launch {
@@ -460,10 +347,14 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
-                LaunchedEffect(checkRun) {
-                    checkRun?.let { run ->
-                        if (run.finishedAt != null && run.pausedReason == null && run.startedAt != dismissedSummaryRun) {
-                            momoxSummary = MomoxSummary(run.available, run.unavailable, run.failed, run.valueCents)
+                val eligible = remember(books) { SaleList.eligibleForCheck(books) }
+                var checkTime by remember(eligible) { mutableStateOf(System.currentTimeMillis()) }
+                LaunchedEffect(eligible) {
+                    lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                        while (true) {
+                            checkTime = System.currentTimeMillis()
+                            val next = SaleList.nextRecheckAt(eligible, checkTime) ?: break
+                            delay((next - checkTime).coerceAtLeast(1L))
                         }
                     }
                 }
@@ -486,10 +377,7 @@ class MainActivity : ComponentActivity() {
                     shelfEditQuery = null
                     shelfCorrectionQuery = null
                 }
-                val closeCandidates: () -> Unit = {
-                    coverCandidates = emptyList()
-                    session.oldScriptJob?.cancel(); session.holdResultFrame(null)
-                }
+                val closeCandidates = search::leave
                 val visibleBooks = remember(books, soldBooks, showSoldBooks, statusFilter, sortMode, searchInput) {
                     // Status chips exist only for active books; a filter chosen there must not hide sold books.
                     BookListQuery.apply(if (showSoldBooks) soldBooks else books, searchInput,
@@ -500,7 +388,6 @@ class MainActivity : ComponentActivity() {
                 val selectedVisibleIds = selectedIsbns.intersect(visibleIds)
                 val exitSelection: () -> Unit = { selectionMode = false; selectedIsbns = emptySet() }
                 BackHandler(enabled = selectionMode && !scannerOpen) { exitSelection() }
-                BackHandler(enabled = scannerOpen) { scannerOpen = false; shelfCorrectionQuery = null; if (shelfReviewOpen) session.shelfReview.resume() }
                 BackHandler(enabled = !scannerOpen && (shelfResults != null || coverCandidates.isNotEmpty())) { closeShelfReview(); closeCandidates() }
 
                 if (settingsOpen) {
@@ -530,9 +417,9 @@ class MainActivity : ComponentActivity() {
                         onDelete = { detailsBook = null; deletingBook = it })
                     return@BuchRadarTheme
                 }
-                BookListScrollEffect(bookListState, session.scrollToBookId.value, listOf(LIST_HEADER_KEY) + visibleBooks.map { it.id },
+                BookListScrollEffect(bookListState, search.scrollToBookId.value?.let { "book:$it" }, listOfNotNull(LIST_HEADER_KEY, "static:message".takeIf { message != null }) + visibleBooks.map { "book:${it.id}" },
                     enabled = !scannerOpen && shelfResults == null && coverCandidates.isEmpty()) {
-                    session.scrollToBookId.value = null
+                    search.scrollToBookId.value = null
                 }
                 val onListScreen = !scannerOpen && shelfResults == null && coverCandidates.isEmpty()
 
@@ -577,7 +464,7 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
                                 } else if (onListScreen) {
-                                    IconButton(onClick = { settingsOpen = true }) { Icon(Icons.Filled.Settings, contentDescription = "Einstellungen öffnen") }
+                                    IconButton(onClick = { search.leave(); settingsOpen = true }) { Icon(Icons.Filled.Settings, contentDescription = "Einstellungen öffnen") }
                                 }
                             }
                         )
@@ -597,7 +484,7 @@ class MainActivity : ComponentActivity() {
                         } else if (onListScreen && !(searchFocused && WindowInsets.isImeVisible)) NavigationBar(containerColor = colorScheme.surfaceContainer) {
                             NavigationBarItem(
                                 selected = !showSoldBooks,
-                                onClick = { showSoldBooks = false; exitSelection() },
+                                onClick = { if (showSoldBooks) search.leave(); showSoldBooks = false; exitSelection() },
                                 icon = { Icon(painterResource(R.drawable.ic_books), contentDescription = null) },
                                 label = { Text("Bücher", maxLines = 1, overflow = TextOverflow.Ellipsis) }
                             )
@@ -611,7 +498,7 @@ class MainActivity : ComponentActivity() {
                             )
                             NavigationBarItem(
                                 selected = showSoldBooks,
-                                onClick = { showSoldBooks = true; exitSelection() },
+                                onClick = { if (!showSoldBooks) search.leave(); showSoldBooks = true; exitSelection() },
                                 icon = { Icon(painterResource(R.drawable.ic_sold), contentDescription = null) },
                                 label = { Text("Verkauft", maxLines = 1, overflow = TextOverflow.Ellipsis) }
                             )
@@ -621,38 +508,34 @@ class MainActivity : ComponentActivity() {
                     if (scannerOpen) {
                         BookScannerView(
                             initialMode = scannerStartMode,
+                            correction = shelfCorrectionQuery?.let { groupId ->
+                                ShelfScanCorrection(groupId) { target, text ->
+                                    scannerOpen = false
+                                    correctShelfGroup(target, text)
+                                }
+                            },
                             onBarcode = { rawValue ->
                                 AppLog.add(context, "Barcode erkannt (${rawValue.length} Zeichen)")
-                                val correctionTarget = shelfCorrectionQuery
-                                val parsed = BookInputFormat.parseIsbn(rawValue)
                                 scannerOpen = false
-                                if (correctionTarget != null) correctShelfGroup(correctionTarget, parsed?.toCompactString() ?: rawValue)
-                                else if (parsed == null) message = "Kein gültiger Buch-Barcode erkannt."
+                                val action = BookInputFormat.classify(rawValue)
+                                if (action !is BookInput.AddIsbn) message = "Kein gültiger Buch-Barcode erkannt."
                                 else {
                                     shelfReviewOpen = false
-                                    searchInput = parsed.toString()
-                                    submitInput(parsed.toString())
+                                    searchInput = BookInputFormat.autoFormatIsbn(action.isbn)
+                                    submitInput(action)
                                 }
                             },
                             onTextConfirmed = { text, frame ->
-                                val isbn = BookIdentity.unambiguousIsbn(text)
-                                val correctionTarget = shelfCorrectionQuery
-                                AppLog.add(context, "OCR-Text übernommen (${text.length} Zeichen, ISBN=${isbn != null})")
+                                val action = BookInputFormat.classify(text)
+                                AppLog.add(context, "OCR-Text übernommen (${text.length} Zeichen)")
                                 scannerOpen = false
-                                if (correctionTarget != null) {
-                                    // Shelf corrections never use cover evidence.
-                                    frame?.recycle()
-                                    correctShelfGroup(correctionTarget, isbn ?: text)
-                                } else {
-                                    shelfReviewOpen = false
-                                    searchInput = isbn?.let(BookInputFormat::autoFormatIsbn) ?: text
-                                    session.offerCoverFrame(if (isbn == null) frame else frame?.let { it.recycle(); null })
-                                    submitInput(searchInput)
-                                }
+                                shelfReviewOpen = false
+                                searchInput = if (action is BookInput.AddIsbn) BookInputFormat.autoFormatIsbn(action.isbn) else text
+                                // The search owns the frame from here on and releases it on every path.
+                                search.submit(action, books, soldBooks, frame, dao::insert)
                             },
                             onShelfConfirmed = { spines, warning ->
                                 AppLog.add(context, "Regal-OCR übernommen (${spines.size} Buchrücken)")
-                                shelfCorrectionQuery = null
                                 searchInput = ""
                                 searchShelf(spines)
                                 message = warning
@@ -774,36 +657,18 @@ class MainActivity : ComponentActivity() {
                         Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedTextField(
                                 value = searchInput,
-                                onValueChange = { searchInput = it },
+                                onValueChange = { if (it.isEmpty()) search.leave(); searchInput = it },
                                 label = { Text("Suchtext bearbeiten") },
                                 modifier = Modifier.fillMaxWidth(),
                                 maxLines = 2,
-                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                                keyboardActions = KeyboardActions(onSearch = { if (searchInput.isNotBlank() && !isSearching) { coverCandidates = emptyList(); submitInput(searchInput) } })
+                                keyboardOptions = searchKeyboardOptions,
+                                keyboardActions = searchKeyboardActions
                             )
-                            message?.let { InfoBanner(it, onDismiss = { if (it == OLD_SCRIPT_PROGRESS) session.oldScriptJob?.cancel(); message = null }) }
-                            // Manual old-script reading for the photographed single book, when not yet tried.
-                            val frameForOldScript = session.resultFrame
-                            if (frameForOldScript != null && !session.oldScriptRead.value && !isSearching && coverCandidates.none { it.coverConfirmed })
-                                OutlinedButton(onClick = {
-                                    val generation = session.searchGeneration
-                                    session.oldScriptJob?.cancel()
-                                    session.oldScriptJob = scope.launch {
-                                        singleSearchBusy = true
-                                        message = OLD_SCRIPT_PROGRESS
-                                        val shown = coverCandidates
-                                        try {
-                                            val list = readOldScript(frameForOldScript, shown, generation)
-                                            if (generation == session.searchGeneration && coverCandidates === shown) {
-                                                if (list != null) { coverCandidates = list; confirmCovers(frameForOldScript, list) }
-                                                message = if (list == null) "Auch mit alter Schrift kein passender Treffer." else null
-                                            }
-                                        } finally {
-                                            singleSearchBusy = false
-                                            if (message == OLD_SCRIPT_PROGRESS) message = null
-                                        }
-                                    }
-                                }, modifier = Modifier.fillMaxWidth().heightIn(min = ImportantButtonHeight)) { Text("Alte Schrift lesen") }
+                            message?.let { InfoBanner(it, onDismiss = { if (it == OLD_SCRIPT_PROGRESS) search.cancelOldScript() else message = null }) }
+                            // Manual old-script reading of the photographed single book, offered once per search.
+                            if (search.oldScriptAvailable && !isSearching && coverCandidates.none { it.coverConfirmed })
+                                OutlinedButton(onClick = { search.readOldScriptNow() },
+                                    modifier = Modifier.fillMaxWidth().heightIn(min = ImportantButtonHeight)) { Text("Alte Schrift lesen") }
                             Text("ISBN und Ausgabe vergleichen.",
                                 style = MaterialTheme.typography.bodyMedium, color = colorScheme.onSurfaceVariant)
                             LazyColumn(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -817,8 +682,10 @@ class MainActivity : ComponentActivity() {
                                             showSoldBooks = false
                                             closeCandidates()
                                         } else if (!isActive) scope.launch {
+                                            val requestId = search.requestId
                                             val newBook = BookEntity(candidateIsbn, candidate.title, candidate.author, candidate.publicationYear, candidate.coverUrl, metadataSource = candidate.sources.joinToString())
                                             val saved = catchingOperation { dao.insert(newBook) }
+                                            if (requestId != search.requestId) return@launch
                                             if (saved.isFailure) {
                                                 message = "Buch konnte nicht gespeichert werden. Die Treffer bleiben erhalten."
                                                 return@launch
@@ -828,43 +695,27 @@ class MainActivity : ComponentActivity() {
                                             statusFilter = BookListQuery.FILTER_ALL
                                             sortMode = BookListQuery.SORT_RECENT
                                             message = if (saved.getOrNull() == -1L) "Dieses Buch ist bereits gespeichert." else "Hinzugefügt: ${candidate.title}"
-                                            if (saved.getOrNull() != -1L) session.scrollToBookId.value = newBook.id
+                                            if (saved.getOrNull() != -1L) search.scrollToBookId.value = newBook.id
                                         }
                                     }
                                 }
                             }
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedButton(onClick = { coverCandidates = emptyList(); submitInput(searchInput) }, enabled = searchInput.isNotBlank() && !isSearching, modifier = Modifier.weight(1f).heightIn(min = ActionButtonHeight)) {
-                                    Icon(Icons.Filled.Search, null, Modifier.padding(end = 6.dp)); Text("Erneut suchen")
+                                OutlinedButton(onClick = { submitInput(inputAction) }, enabled = searchInput.isNotBlank() && !isSearching, modifier = Modifier.weight(1f).heightIn(min = ActionButtonHeight)) {
+                                    Icon(if (inputAction is BookInput.AddIsbn) Icons.Filled.Add else Icons.Filled.Search, null, Modifier.padding(end = 6.dp))
+                                    Text(if (inputAction is BookInput.AddIsbn) "ISBN hinzufügen" else "Erneut suchen")
                                 }
                                 TextButton(onClick = { closeCandidates(); searchInput = "" }, modifier = Modifier.weight(1f)) { Text("Zurück zur Eingabe") }
                             }
                         }
-                    } else Column(Modifier.fillMaxSize().padding(padding)) {
+                    } else ListPane(padding) { availableHeight, wideActions ->
+                        val searchHeight = availableHeight * .6f
+                        val pinCount = availableHeight - searchHeight >= (72 * LocalDensity.current.fontScale).dp
                         LaunchedEffect(searchInput) {
                             if (searchInput != lastListQuery) {
                                 lastListQuery = searchInput
                                 // Saving or finding an existing ISBN clears the field and scrolls to that book.
-                                if (hasSearchInput || session.scrollToBookId.value == null) bookListState.scrollToItem(0)
-                            }
-                        }
-                        // In landscape and with large fonts the fixed area may take at most 40 % of the height and scrolls itself.
-                        Column(Modifier.then(if (landscape || largeFont) Modifier.heightIn(max = (LocalConfiguration.current.screenHeightDp * .4f).dp).verticalScroll(rememberScrollState()) else Modifier)
-                            .padding(horizontal = 16.dp).padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            if (!showSoldBooks && !selectionMode) {
-                                if (shelfState.groups.isNotEmpty() || shelfError != null) Surface(
-                                    color = colorScheme.surfaceContainerHigh, contentColor = colorScheme.onSurface,
-                                    shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Row(Modifier.padding(start = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(painterResource(R.drawable.ic_shelf), contentDescription = null, tint = colorScheme.tertiary)
-                                        Text(if (shelfError != null) "Gespeicherte Regal-Funde" else "${shelfState.groups.size} Regal-Funde offen",
-                                            Modifier.weight(1f).padding(horizontal = 10.dp), style = MaterialTheme.typography.bodyLarge)
-                                        TextButton(enabled = !singleSearchBusy, onClick = { shelfReviewOpen = true; message = null; session.shelfReview.resume() }) {
-                                            Text(if (shelfError != null) "Laden" else "Fortsetzen", fontWeight = FontWeight.Bold)
-                                        }
-                                    }
-                                }
+                                if (hasSearchInput || search.scrollToBookId.value == null) bookListState.scrollToItem(0)
                             }
                         }
                         LazyColumn(
@@ -873,23 +724,33 @@ class MainActivity : ComponentActivity() {
                             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            if (hasSearchInput) stickyHeader(key = LIST_HEADER_KEY) {
-                                FlowRow(
-                                    Modifier.fillMaxWidth().background(colorScheme.surface).padding(vertical = 4.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                ) {
-                                    Text(BookListQuery.resultCountLabel(visibleBooks.size), style = MaterialTheme.typography.labelLarge)
-                                    if (isCheckingMomox) {
-                                        val status = if (checkRun?.pausedReason == null) "läuft" else "pausiert"
-                                        Text("Momox-Prüfung $status · $momoxProgress von $momoxTotal", style = MaterialTheme.typography.bodyMedium)
+                            if (hasSearchInput) {
+                                val count: @Composable () -> Unit = {
+                                    Box(Modifier.fillMaxWidth().background(colorScheme.surface).padding(vertical = 4.dp)) {
+                                        Text(BookListQuery.resultCountLabel(visibleBooks.size), style = MaterialTheme.typography.labelLarge)
                                     }
                                 }
+                                if (pinCount) stickyHeader(key = LIST_HEADER_KEY) { count() }
+                                else item(key = LIST_HEADER_KEY) { count() }
                             } else item(key = LIST_HEADER_KEY) {
                                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    if (!showSoldBooks && !selectionMode && (shelfState.groups.isNotEmpty() || shelfError != null)) Surface(
+                                        color = colorScheme.surfaceContainerHigh, contentColor = colorScheme.onSurface,
+                                        shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Row(Modifier.padding(start = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(painterResource(R.drawable.ic_shelf), contentDescription = null, tint = colorScheme.tertiary)
+                                            Text(if (shelfError != null) "Gespeicherte Regal-Funde" else "${shelfState.groups.size} Regal-Funde offen",
+                                                Modifier.weight(1f).padding(horizontal = 10.dp), style = MaterialTheme.typography.bodyLarge)
+                                            TextButton(enabled = !singleSearchBusy, onClick = { shelfReviewOpen = true; message = null; session.shelfReview.resume() }) {
+                                                Text(if (shelfError != null) "Laden" else "Fortsetzen", fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                    }
                                     if (books.isNotEmpty() || showSoldBooks) ListOverview(if (showSoldBooks) "Verkaufte Bücher" else "Meine Bücher", totals, showValue = !showSoldBooks,
-                                        onSell = if (!showSoldBooks && !selectionMode) ({ keyboard?.hide(); session.saleDraft.value = null; saleOpen = true }) else null)
+                                        onSell = if (!showSoldBooks && !selectionMode) ({ keyboard?.hide(); search.leave(); session.saleDraft.value = null; saleOpen = true }) else null)
                                     // Progress and controls follow the run, even if no active book is left.
-                                    if (!showSoldBooks && (books.isNotEmpty() || isCheckingMomox || momoxSummary != null)) {
+                                    if (!showSoldBooks && (books.isNotEmpty() || checkRun != null)) {
                                         if (isCheckingMomox) Card(colors = CardDefaults.cardColors(containerColor = colorScheme.secondaryContainer), modifier = Modifier.fillMaxWidth()) {
                                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                                 Text("Momox-Prüfung · $momoxProgress von $momoxTotal", style = MaterialTheme.typography.titleMedium)
@@ -903,13 +764,13 @@ class MainActivity : ComponentActivity() {
                                         } else if (!selectionMode) {
                                             val lastListCheck = checkRun?.finishedAt?.takeIf { checkRun?.pausedReason == null } ?: books.mapNotNull { it.lastCheckedAt }.maxOrNull()
                                             MomoxActionRow(
-                                            lastCheckedAt = lastListCheck,
-                                            checkDue = momoxCheckDue(lastListCheck, books.any { it.isbn.isNotBlank() && it.lastCheckedAt == null }),
-                                            errors = momoxSummary?.errors ?: 0,
-                                            canCheck = books.isNotEmpty(),
-                                            onShowErrors = { statusFilter = BookListQuery.FILTER_ERROR },
-                                            onCheck = { momoxCheckDialogOpen = true }
-                                        )
+                                                lastCheckedAt = lastListCheck,
+                                                checkDue = eligible.any { SaleList.needsRecheck(it, checkTime) },
+                                                errors = totals.errorCount,
+                                                canCheck = eligible.isNotEmpty(),
+                                                onShowErrors = { statusFilter = BookListQuery.FILTER_ERROR },
+                                                onCheck = { momoxCheckDialogOpen = true }
+                                            )
                                         }
                                     }
                                     // Filter and sorting as two choice buttons on one line (wrapping only at large fonts);
@@ -950,10 +811,13 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
                             }
+                            message?.let { notice ->
+                                item(key = "static:message") { InfoBanner(notice, compact = true, onDismiss = { if (notice == OLD_SCRIPT_PROGRESS) search.cancelOldScript() else message = null }) }
+                            }
                             if (visibleBooks.isEmpty()) item(key = "static:empty") {
                                 val noBooksYet = if (showSoldBooks) soldBooks.isEmpty() else books.isEmpty()
                                 val resetAction = if (!noBooksYet && (statusFilter != BookListQuery.FILTER_ALL || hasSearchInput)) {
-                                    "Suche und Filter zurücksetzen" to { statusFilter = BookListQuery.FILTER_ALL; searchInput = "" }
+                                    "Suche und Filter zurücksetzen" to { search.leave(); statusFilter = BookListQuery.FILTER_ALL; searchInput = "" }
                                 } else null
                                 if (hasSearchInput) {
                                     resetAction?.let { (label, reset) -> TextButton(onClick = reset) { Text(label) } }
@@ -981,78 +845,71 @@ class MainActivity : ComponentActivity() {
                                         onSelect = {
                                             selectedIsbns = if (book.id in selectedIsbns) selectedIsbns - book.id else selectedIsbns + book.id
                                         },
-                                        onLongSelect = { keyboard?.hide(); selectionMode = true; selectedIsbns = selectedIsbns + book.id },
+                                        onLongSelect = { search.leave(); keyboard?.hide(); selectionMode = true; selectedIsbns = selectedIsbns + book.id },
                                         onRestore = { restoreSold(listOf(book.id)) },
-                                        onOpen = { detailsBook = book },
-                                        onEdit = { editingBook = book },
-                                        onDelete = { deletingBook = book },
+                                        onOpen = { search.leave(); detailsBook = book },
+                                        onEdit = { search.leave(); editingBook = book },
+                                        onDelete = { search.leave(); deletingBook = book },
                                         onMomoxCheck = { runMomoxCheck(listOf(book)) },
                                         onMarkSold = { markSold(listOf(book.id)) }
                                     )
                                 }
                             }
                         }
-                        // Edge-to-edge windows are not resized for the keyboard: lift the search area by the
-                        // keyboard height minus the navigation bar, which the scaffold padding already covers.
-                        Column(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.ime.exclude(WindowInsets.navigationBars))
-                            .padding(horizontal = 16.dp).padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            message?.let { InfoBanner(it, compact = true, onDismiss = { if (it == OLD_SCRIPT_PROGRESS) session.oldScriptJob?.cancel(); message = null }) }
+                        Column(Modifier.fillMaxWidth().heightIn(max = searchHeight).verticalScroll(rememberScrollState())
+                            .padding(horizontal = 16.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             if (!selectionMode) {
                                 // 48 dp instead of the 56 dp OutlinedTextField: same look, less vertical padding.
                                 val searchInteraction = remember { MutableInteractionSource() }
                                 val searchColors = OutlinedTextFieldDefaults.colors()
-                                val onSearchAction = { if (showSoldBooks) keyboard?.hide() else if (searchInput.isNotBlank()) submitInput(searchInput) }
                                 BasicTextField(
                                     value = searchInput,
-                                    onValueChange = { searchInput = it; session.offerCoverFrame(null) },
-                                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = if (isSearching) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f) else MaterialTheme.colorScheme.onSurface),
+                                    onValueChange = { if (singleSearchBusy || it.isEmpty()) search.leave(); searchInput = it },
+                                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = if (shelfBusy) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f) else MaterialTheme.colorScheme.onSurface),
                                     cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                                     interactionSource = searchInteraction,
                                     // Enter on a hardware keyboard searches instead of adding a line break;
                                     // the field stays multi-line to show recognised text.
                                     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).onFocusChanged { searchFocused = it.isFocused }.onPreviewKeyEvent { event ->
                                         if (event.key == Key.Enter || event.key == Key.NumPadEnter) {
-                                            if (event.type == KeyEventType.KeyUp) onSearchAction()
+                                            if (event.type == KeyEventType.KeyUp) submitField()
                                             true
                                         } else false
                                     },
-                                    enabled = !isSearching,
+                                    enabled = !shelfBusy,
                                     maxLines = 3,
-                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                                    keyboardActions = KeyboardActions(onSearch = { onSearchAction() })
+                                    keyboardOptions = searchKeyboardOptions,
+                                    keyboardActions = searchKeyboardActions
                                 ) { innerTextField ->
                                     OutlinedTextFieldDefaults.DecorationBox(
                                         value = searchInput,
                                         innerTextField = innerTextField,
-                                        enabled = !isSearching,
+                                        enabled = !shelfBusy,
                                         singleLine = false,
                                         visualTransformation = VisualTransformation.None,
                                         interactionSource = searchInteraction,
                                         placeholder = { Text(if (showSoldBooks) "Verkaufte durchsuchen" else "ISBN oder Titel", maxLines = 1) },
                                         leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
                                         trailingIcon = if (searchInput.isNotEmpty()) {
-                                            { IconButton(onClick = { searchInput = ""; message = null }) { Icon(Icons.Filled.Clear, contentDescription = "Eingabe löschen") } }
+                                            { IconButton(onClick = { search.leave(); searchInput = ""; message = null }) { Icon(Icons.Filled.Clear, contentDescription = "Eingabe löschen") } }
                                         } else null,
                                         colors = searchColors,
                                         contentPadding = OutlinedTextFieldDefaults.contentPadding(top = 12.dp, bottom = 12.dp),
                                         container = {
-                                            OutlinedTextFieldDefaults.Container(enabled = !isSearching, isError = false, interactionSource = searchInteraction,
+                                            OutlinedTextFieldDefaults.Container(enabled = !shelfBusy, isError = false, interactionSource = searchInteraction,
                                                 colors = searchColors, shape = RoundedCornerShape(24.dp))
                                         }
                                     )
                                 }
                             }
                             if (hasSearchInput && !showSoldBooks && !selectionMode) {
-                                val inputIsIsbn = BookInputFormat.parseIsbn(searchInput) != null
-                                val catalogSearch = searchInput.any(Char::isLetter) && !inputIsIsbn
-                                // One row of real 48 dp buttons; from larger font sizes on, "Von Hand" moves to a
-                                // second row so no label is ever cut off.
-                                val oneRow = LocalDensity.current.fontScale < 1.15f
-                                val primary: @Composable RowScope.() -> Unit = {
+                                val catalogSearch = inputAction is BookInput.SearchTitle
+                                val oneRow = LocalDensity.current.fontScale < 1.15f && wideActions
+                                val primary: @Composable (Modifier) -> Unit = { mod ->
                                     Button(
-                                        onClick = { submitInput(searchInput) },
+                                        onClick = { submitInput(inputAction) },
                                         enabled = !isSearching && searchInput.isNotBlank(),
-                                        modifier = Modifier.weight(1f).heightIn(min = ImportantButtonHeight),
+                                        modifier = mod.heightIn(min = ImportantButtonHeight),
                                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
                                     ) {
                                         Icon(if (catalogSearch) Icons.Filled.Search else Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(20.dp))
@@ -1071,15 +928,15 @@ class MainActivity : ComponentActivity() {
                                         modifier = mod.semantics { contentDescription = "Buch von Hand eintragen" }.heightIn(min = ImportantButtonHeight),
                                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)) {
                                         Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(20.dp))
-                                        Text(if (oneRow) "Von Hand" else "Von Hand eintragen", modifier = Modifier.padding(start = 6.dp))
+                                        Text("Von Hand", modifier = Modifier.padding(start = 6.dp))
                                     }
                                 }
+                                if (catalogSearch && !oneRow) primary(Modifier.fillMaxWidth())
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    primary()
-                                    if (catalogSearch && oneRow) manual(Modifier)
+                                    if (!catalogSearch || oneRow) primary(Modifier.weight(1f))
+                                    if (catalogSearch) manual(if (oneRow) Modifier else Modifier.weight(1f))
                                     camera()
                                 }
-                                if (catalogSearch && !oneRow) manual(Modifier.fillMaxWidth())
                             }
                         }
 
@@ -1091,11 +948,10 @@ class MainActivity : ComponentActivity() {
                     title = { Text("Momox-Preise prüfen") },
                     text = { Column {
                         Text("Welche Bücher sollen nacheinander geprüft werden?")
-                        val now = System.currentTimeMillis()
                         listOf(
-                            Triple("new", "Nur neue / ungeprüfte", books.count { it.isbn.isNotBlank() && it.lastCheckedAt == null }),
-                            Triple("stale", "Fällige und fehlgeschlagene", books.count { it.isbn.isNotBlank() && (it.lastCheckedAt == null || now - it.lastCheckedAt >= 24L * 60 * 60 * 1000 || it.lastAttemptStatus == "ERROR") }),
-                            Triple("all", "Alle Bücher", books.count { it.isbn.isNotBlank() })
+                            Triple("new", "Nur neue / ungeprüfte", eligible.count { it.lastCheckedAt == null }),
+                            Triple("stale", "Fällige und fehlgeschlagene", eligible.count { SaleList.needsRecheck(it, checkTime) }),
+                            Triple("all", "Alle Bücher", eligible.size)
                         ).forEach { (key, label, count) ->
                             Row(Modifier.fillMaxWidth().selectable(selected = momoxCheckMode == key, role = Role.RadioButton, onClick = { momoxCheckMode = key }).heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
                                 RadioButton(selected = momoxCheckMode == key, onClick = null)
@@ -1106,10 +962,10 @@ class MainActivity : ComponentActivity() {
                     confirmButton = { FilledTonalButton(modifier = Modifier.heightIn(min = ImportantButtonHeight), onClick = {
                         val now = System.currentTimeMillis()
                         val snapshot = when (momoxCheckMode) {
-                            "new" -> books.filter { it.lastCheckedAt == null }
-                            "stale" -> books.filter { it.lastCheckedAt == null || now - it.lastCheckedAt >= 24L * 60 * 60 * 1000 || it.lastAttemptStatus == "ERROR" }
-                            else -> books
-                        }.filter { it.isbn.isNotBlank() }
+                            "new" -> eligible.filter { it.lastCheckedAt == null }
+                            "stale" -> eligible.filter { SaleList.needsRecheck(it, now) }
+                            else -> eligible
+                        }
                         momoxCheckDialogOpen = false
                         runMomoxCheck(snapshot)
                     }) { Text("Prüfung starten") } },
@@ -1144,7 +1000,7 @@ class MainActivity : ComponentActivity() {
                             result.getOrNull() == -1L -> "Diese ISBN ist bereits gespeichert."
                             else -> {
                                 searchInput = ""; statusFilter = BookListQuery.FILTER_ALL; sortMode = BookListQuery.SORT_RECENT
-                                message = "Buch gespeichert."; session.scrollToBookId.value = newBook.id; null
+                                message = "Buch gespeichert."; search.scrollToBookId.value = newBook.id; null
                             }
                         }
                     }
@@ -1177,6 +1033,15 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@Composable
+private fun ListPane(padding: PaddingValues, content: @Composable ColumnScope.(Dp, Boolean) -> Unit) {
+    BoxWithConstraints(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
+        val availableHeight = maxHeight
+        val wideActions = maxWidth >= 360.dp
+        Column(Modifier.fillMaxSize()) { content(availableHeight, wideActions) }
+    }
+}
+
 private const val LIST_HEADER_KEY = "static:list-header"
 
 @androidx.compose.runtime.Composable
@@ -1193,5 +1058,3 @@ private fun EmptyState(title: String, text: String, action: Pair<String, () -> U
         action?.let { (label, onClick) -> OutlinedButton(modifier = Modifier.heightIn(min = ActionButtonHeight), onClick = onClick) { Text(label) } }
     }
 }
-
-private const val OLD_SCRIPT_PROGRESS = "Alte Schrift wird gelesen … (zum Abbrechen schließen)"

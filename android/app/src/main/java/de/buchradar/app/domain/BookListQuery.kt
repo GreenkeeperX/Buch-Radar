@@ -93,6 +93,12 @@ data class BookListTotals(
     val errorCount: Int
 )
 
+sealed interface BookInput {
+    data class AddIsbn(val isbn: String) : BookInput
+    data class SearchTitle(val text: String) : BookInput
+    data object Invalid : BookInput
+}
+
 /** Formatting of typed or scanned ISBN input. */
 object BookInputFormat {
     /** Accepts ISBN-10/13 with or without hyphens and spaces. */
@@ -102,6 +108,15 @@ object BookInputFormat {
         val compact = value.trim().filterNot { it == '-' || it.isWhitespace() }
         if (compact.isEmpty()) return null
         return catchingOperation { ISBN.valueOf(compact) }.getOrNull()
+    }
+
+    fun classify(text: String): BookInput {
+        val isbn = parseIsbn(text)?.toCompactString() ?: BookIdentity.unambiguousIsbn(text)
+        return when {
+            isbn != null -> BookInput.AddIsbn(isbn)
+            text.any(Char::isLetter) -> BookInput.SearchTitle(text)
+            else -> BookInput.Invalid
+        }
     }
 
     /** Hyphenated display form of a complete ISBN; other input is returned unchanged. */
